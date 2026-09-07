@@ -1,0 +1,5 @@
+// Production build: same settings, but tests never ship to dist/.
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+}

@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: pathwise-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: JWT_SECRET
+        sync: false # set manually in the Render dashboard — don't commit secrets
+      - key: DATABASE_URL
+        value: "file:./pathwise.db" # unused once TURSO_DATABASE_URL is set below
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false # your Vercel URL, e.g. https://pathwise.vercel.app
+      - key: APP_URL
+        sync: false # same as CORS_ORIGIN — used in password-reset email links
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: "Pathwise <onboarding@resend.dev>"
+      - key: AI_PROVIDER
+        value: mock
+      - key: FREE_COURSE_CAP
+        value: 3

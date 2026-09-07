@@ -1,0 +1,1004 @@
+// Pathwise database schema
+// Provider: SQLite for MVP (per the blueprint). Note: SQLite doesn't support
+// native enums, so enum-like fields are Strings with their allowed values noted.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Users & account
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  name           String
+  username       String?   @unique
+
+  // Privacy statement is shown once at signup; we record acceptance.
+  privacyAcceptedAt DateTime?
+  // Terms of Service version the user accepted (Step 15). Bumping
+  // TOS_VERSION in env re-prompts everyone on next sign-in.
+  tosAcceptedVersion String?
+
+  // Forgot-password flow: hashed token + expiry. We store a hash, never the
+  // raw token, so a DB leak alone can't be used to reset someone's password.
+  resetTokenHash    String?   @unique
+  resetTokenExpiresAt DateTime?
+
+  // Gamification core (Step 9) — kept here so we don't remodel later.
+  xp             Int       @default(0)
+  streakCount    Int       @default(0)
+  bestStreak     Int       @default(0)
+  lastActiveDay  String?   // "YYYY-MM-DD" in the user's timezone
+  timezone       String    @default("UTC")
+  // Streak Freeze (Step 9 item 4): consumable that covers one missed day.
+  streakFreezes  Int       @default(0)
+  // Separate currency earned in the mini-game (Step 11) — never from studying,
+  // so buying cosmetics can't be confused with academic progress.
+  gardenXp       Int       @default(0)
+
+  // First-run explainers (Step 7 item 4) — shown once each.
+  socraticIntroSeenAt DateTime?
+
+  // Notification preferences (Steps 10 + 12).
+  notifyStreak      Boolean @default(true)
+  notifyReviewDue   Boolean @default(true)
+  notifyUnlocks     Boolean @default(true)
+  // Channel: also deliver streak/review reminders by email. In-app alone can't
+  // bring anyone back — you only see it once you've already opened the app.
+  notifyEmail       Boolean @default(true)
+  // Fixed local time for the daily streak nudge, "HH:MM" in `timezone`.
+  notifyHour        Int     @default(19)
+
+  // Referrals (Step 14).
+  referralCode   String?   @unique
+  referredByCode String?
+
+  // Account management (Step 10): soft delete with 30-day recovery window.
+  deletedAt      DateTime?
+  purgeAfter     DateTime? // deletedAt + 30 days; a job hard-deletes past this
+
+  // Guest mode (PATHWISE 2.0 Phase 1). A guest is a real user row with a
+  // synthetic identity, so every ownership check and feature works unchanged.
+  // Guests expire: the cron sweep hard-deletes them (and their stored files)
+  // past guestExpiresAt. Claiming an account clears both fields.
+  isGuest        Boolean   @default(false)
+  guestExpiresAt DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  courses        Course[]
+  learnerProfile LearnerProfile?
+  subscription   Subscription?
+  masteries      TopicMastery[]
+  quizSessions   QuizSession[]
+  socraticSessions SocraticSession[]
+  badges         UserBadge[]
+  companion      Companion?
+  inventory      InventoryItem[]
+  notifications  NotificationLog[]
+  aiUsage        AIUsage[]
+  events         AnalyticsEvent[]
+  feedback       Feedback[]
+  communityMemberships CommunityMember[]
+  communityPosts       CommunityPost[]
+  communityReplies     CommunityReply[]
+  communityReactions   CommunityReaction[]
+  contentReports       ContentReport[]
+  buddyRequestsSent     BuddyRequest[] @relation("BuddyRequestsSent")
+  buddyRequestsReceived BuddyRequest[] @relation("BuddyRequestsReceived")
+  conversationsA        Conversation[] @relation("ConversationA")
+  conversationsB        Conversation[] @relation("ConversationB")
+  directMessages        DirectMessage[]
+  conversationStates    ConversationState[]
+  blocksMade            UserBlock[] @relation("BlocksMade")
+  blocksReceived        UserBlock[] @relation("BlocksReceived")
+  videoEngagements      VideoEngagement[]
+  creatorVideos         CreatorVideo[]
+  creatorVideoEvents    CreatorVideoEvent[]
+  creatorVideoComments  CreatorVideoComment[]
+  creatorFollowers      CreatorFollow[] @relation("FollowedCreator")
+  creatorFollowing      CreatorFollow[] @relation("FollowingUser")
+  studyRoomsA           StudyRoom[] @relation("StudyRoomA")
+  studyRoomsB           StudyRoom[] @relation("StudyRoomB")
+  studyRoomMessages     StudyRoomMessage[]
+
+  @@index([deletedAt])
+  @@index([purgeAfter])
+  @@index([isGuest, guestExpiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Learner profile (PATHWISE 2.0 Phase 2)
+// ---------------------------------------------------------------------------
+
+// Personalization signals collected at onboarding and editable any time.
+// These feed recommendations, community suggestions and study-buddy matching
+// in later phases — matching reads THIS, never a user's private files.
+// List fields are JSON string arrays (SQLite has no native arrays).
+model LearnerProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  field         String?   // e.g. "Computer Science"
+  // "high_school" | "undergraduate" | "graduate" | "professional" | "self_taught"
+  academicLevel String?
+  subjectsJson  String    @default("[]") // current courses/subjects
+  topicsJson    String    @default("[]") // topics of interest
+  // Keys from ONBOARDING_CATALOG.contentPrefs, e.g. "short_explanations".
+  contentPrefsJson String @default("[]")
+  communityInterestsJson String @default("[]")
+  // "solo" | "buddy" | "group" | "mixed"
+  studyStyle    String?
+  // Study-partner preferences, e.g. {"similarLevel":true,"availability":"evenings"}.
+  buddyPrefsJson String   @default("{}")
+
+  // Set when the wizard finishes (or is skipped) — gates showing it again.
+  onboardedAt   DateTime?
+  updatedAt     DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Courses & materials
+// ---------------------------------------------------------------------------
+
+model Course {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String
+  icon          String    @default("book") // keyword mapped to an icon on the frontend
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  uploads       Upload[]
+  knowledgeMap  KnowledgeMap?
+  quizSessions  QuizSession[]
+  socraticSessions SocraticSession[]
+
+  @@index([userId])
+}
+
+model Upload {
+  id            String    @id @default(cuid())
+  courseId      String
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  filename      String
+  storagePath   String    // where the file lives on disk (see storage lib)
+  mimeType      String
+  sizeBytes     Int
+
+  // "pending" | "parsing" | "processed" | "failed" | "rejected"
+  // "rejected" = failed the content check in Step 15 (off-topic/inappropriate).
+  status        String    @default("pending")
+  extractedText String?   // raw text pulled out of the file (Step 2)
+  error         String?
+  // Moderation verdict (Step 15): "clean" | "off_topic" | "inappropriate".
+  moderation    String?
+  moderationNote String?
+
+  createdAt     DateTime  @default(now())
+
+  @@index([courseId])
+}
+
+// One knowledge map per course; expands as materials are added.
+model KnowledgeMap {
+  id            String    @id @default(cuid())
+  courseId      String    @unique
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  topics        Topic[]
+}
+
+model Topic {
+  id             String    @id @default(cuid())
+  knowledgeMapId String
+  knowledgeMap   KnowledgeMap @relation(fields: [knowledgeMapId], references: [id], onDelete: Cascade)
+
+  name           String
+  summary        String?
+  // Emphasis weight 0..1 — how heavily the material stresses this topic (Step 2).
+  weight         Float     @default(0.5)
+
+  // --- Knowledge Layer 2.0 (PATHWISE 2.0 Phase 6) --------------------------
+  // Richer concept structure, extracted from the material itself. Every list
+  // is a JSON string array (SQLite has no arrays); all optional so topics
+  // created before this phase keep working untouched.
+  // How hard the material treats this topic, 0 (intro) .. 1 (advanced).
+  difficulty     Float?
+  // Optional parent concept within the same knowledge map.
+  parentId       String?
+  parent         Topic?    @relation("TopicChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Topic[]   @relation("TopicChildren")
+  // What a student should be able to DO once this topic is mastered.
+  objectivesJson String    @default("[]")
+  // Misconceptions the material warns about — feeds quiz distractors and
+  // Socratic probing.
+  misconceptionsJson String @default("[]")
+  // Names of topics that should be understood first (resolved by name within
+  // the course, so map merges don't dangle ids).
+  prerequisitesJson  String @default("[]")
+  // Where in the material this came from, e.g. "syllabus.pdf — Week 3".
+  sourceRef      String?
+
+  // Topic Breakdown (learning layer): the cached lecturer-style explanation
+  // generated from the course's own material. One AI call ever per topic.
+  breakdownJson  String?
+  breakdownAt    DateTime?
+
+  createdAt      DateTime  @default(now())
+
+  masteries      TopicMastery[]
+  quizItems      QuizItem[]
+  socraticSessions SocraticSession[]
+
+  @@index([knowledgeMapId])
+  @@index([parentId])
+}
+
+// Per-user, per-topic mastery state (Step 4). Created here so quiz/Socratic
+// signals have somewhere to write from the start.
+model TopicMastery {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId       String
+  topic         Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  mastery       Float     @default(0) // 0..1
+  lastReviewedAt DateTime?
+  dueAt         DateTime? // spaced-repetition next-review time
+
+  // Spaced repetition state (Step 4 item 2). SM-2-flavoured, but driven purely
+  // by last-reviewed + performance — never by exam dates.
+  intervalDays  Float     @default(0)
+  easeFactor    Float     @default(2.5)
+  reps          Int       @default(0)
+  lapses        Int       @default(0)
+
+  // "Guessing vs understanding" signal (Steps 4/8). Correct answers that came
+  // fast with no Socratic depth read as guessing; slower, reasoned answers and
+  // Socratic sessions read as understanding.
+  guessSignal        Float @default(0) // 0..1, higher = more guess-like
+  correctCount       Int   @default(0)
+  attemptCount       Int   @default(0)
+  socraticTurnCount  Int   @default(0)
+
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, topicId])
+  @@index([userId])
+  @@index([userId, dueAt])
+}
+
+// ---------------------------------------------------------------------------
+// Quiz engine (Step 5)
+// ---------------------------------------------------------------------------
+
+model QuizSession {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // "active" | "completed" | "abandoned"
+  status        String    @default("active")
+  // "practice" | "review" (spaced-repetition driven) | "weakest"
+  kind          String    @default("practice")
+  xpAwarded     Int       @default(0)
+
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  items         QuizItem[]
+
+  @@index([userId, status])
+  @@index([courseId])
+}
+
+model QuizItem {
+  id            String    @id @default(cuid())
+  sessionId     String
+  session       QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  topicId       String?
+  topic         Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  position      Int
+  topicName     String
+  question      String
+  optionsJson   String    // JSON array of option strings ("[]" for written)
+  correctIndex  Int
+  explanation   String
+  // Two-phase quizzes: "mcq" | "written". Written items have no options —
+  // the student types an answer and the AI grades correct/close/incorrect
+  // against referenceAnswer.
+  kind            String  @default("mcq")
+  referenceAnswer String?
+
+  // Filled in when the student answers.
+  selectedIndex Int?
+  writtenAnswer String?
+  // Written grading: "correct" | "close" | "incorrect".
+  verdict       String?
+  isCorrect     Boolean?
+  answeredAt    DateTime?
+  // Milliseconds the student spent on the question — feeds the guessing signal.
+  timeMs        Int?
+
+  @@unique([sessionId, position])
+  @@index([sessionId])
+}
+
+// ---------------------------------------------------------------------------
+// Socratic tutor (Step 7)
+// ---------------------------------------------------------------------------
+
+model SocraticSession {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topicId       String?
+  topic         Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  // Where the session was launched from (Step 7 item 2): "study_plan" |
+  // "quiz" | "course" | "dashboard".
+  origin        String    @default("course")
+  // Free-text context passed in from the launch point (e.g. the quiz question
+  // the student got stuck on) so the tutor can probe the right thing.
+  contextNote   String?
+
+  // "active" | "ended"
+  status        String    @default("active")
+  turnCount     Int       @default(0)
+  // How many times the leak guard had to regenerate/redirect a reply. A
+  // non-zero value here is a prompt-quality signal worth watching.
+  guardTrips    Int       @default(0)
+  xpAwarded     Int       @default(0)
+
+  createdAt     DateTime  @default(now())
+  endedAt       DateTime?
+
+  messages      SocraticMessage[]
+
+  @@index([userId, status])
+  @@index([courseId])
+}
+
+model SocraticMessage {
+  id            String    @id @default(cuid())
+  sessionId     String
+  session       SocraticSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // "user" | "assistant"
+  role          String
+  content       String
+  // True when the leak guard replaced a model reply that contained an answer.
+  wasGuarded    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([sessionId])
+}
+
+// ---------------------------------------------------------------------------
+// Gamification (Step 9)
+// ---------------------------------------------------------------------------
+
+model Badge {
+  id            String    @id @default(cuid())
+  key           String    @unique // stable code, e.g. "first_quiz"
+  name          String
+  description   String
+  icon          String    @default("award")
+
+  users         UserBadge[]
+}
+
+model UserBadge {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId       String
+  badge         Badge     @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  earnedAt      DateTime  @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Companion pet, mini-game & shop (Step 11)
+// ---------------------------------------------------------------------------
+
+model Companion {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String    @default("Sprout")
+  // Growth points accumulated passively from study XP — the pet grows whether
+  // or not the student ever opens the mini-game.
+  growth        Int       @default(0)
+  // Currently equipped cosmetics, JSON array of ShopItem keys.
+  equippedJson  String    @default("[]")
+
+  updatedAt     DateTime  @updatedAt
+}
+
+model ShopItem {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  name          String
+  description   String
+  // "cosmetic" | "consumable"
+  kind          String
+  // "companion" | "habitat" | "utility"
+  slot          String    @default("companion")
+  priceGardenXp Int
+  icon          String    @default("gem")
+  // Premium-only cosmetics (Step 13 item 3).
+  premiumOnly   Boolean   @default(false)
+
+  owners        InventoryItem[]
+}
+
+model InventoryItem {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          ShopItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  quantity      Int       @default(1)
+  purchasedAt   DateTime  @default(now())
+
+  @@unique([userId, itemId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (Step 12)
+// ---------------------------------------------------------------------------
+
+model NotificationLog {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "streak_reminder" | "review_due" | "unlock"
+  kind          String
+  title         String
+  body          String
+  // Where tapping it should land, e.g. "/study-plan/<courseId>".
+  deepLink      String?
+
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+  // "YYYY-MM-DD" bucket, so a given kind fires at most once per local day.
+  dayKey        String
+
+  @@unique([userId, kind, dayKey])
+  @@index([userId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// Monetization (Step 13)
+// ---------------------------------------------------------------------------
+
+model Subscription {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "free" | "premium"
+  tier          String    @default("free")
+  // "monthly" | "annual" | null
+  interval      String?
+  status        String    @default("active") // active | canceled | past_due
+  provider      String?   // e.g. "stripe"
+  externalId    String?   // provider subscription id
+  customerId    String?   // provider customer id
+  currentPeriodEnd DateTime?
+  // Set when the user cancels but the paid period hasn't ended yet.
+  cancelAtPeriodEnd Boolean @default(false)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([externalId])
+}
+
+// ---------------------------------------------------------------------------
+// Observability: AI spend (Step 1 item 6) and product analytics (Step 16)
+// ---------------------------------------------------------------------------
+
+// Every AI call is logged with its token counts and estimated cost. This is
+// the one part of the system that costs real money per use, so it is metered
+// from day one rather than retrofitted.
+model AIUsage {
+  id            String    @id @default(cuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  provider      String    // "mock" | "openai"
+  model         String
+  // "extract_topics" | "generate_quiz" | "socratic_reply" | "moderate"
+  operation     String
+
+  promptTokens     Int    @default(0)
+  completionTokens Int    @default(0)
+  // Estimated USD, in micro-dollars to avoid float drift (1_000_000 = $1).
+  costMicroUsd     Int    @default(0)
+  durationMs       Int    @default(0)
+  ok               Boolean @default(true)
+  error            String?
+
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([operation])
+}
+
+// Success-metric events (Step 16 item 4): activation, upload completion,
+// quiz completion, retention, mastery growth, premium conversion.
+model AnalyticsEvent {
+  id            String    @id @default(cuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  name          String
+  propsJson     String    @default("{}")
+  createdAt     DateTime  @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Beta feedback
+// ---------------------------------------------------------------------------
+
+// A closed beta lives or dies on hearing from testers. One table, one
+// endpoint, one box in the profile — no third-party widget before the
+// privacy review.
+model Feedback {
+  id            String    @id @default(cuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  message       String
+  // Where in the app it was sent from, e.g. "/quiz/abc123".
+  context       String?
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Referrals (Step 14)
+// ---------------------------------------------------------------------------
+
+model Referral {
+  id            String    @id @default(cuid())
+  // Code owner (referrer) and the user who signed up with it (referee).
+  referrerId    String
+  refereeId     String    @unique
+  code          String
+
+  // "pending" until the referee hits their first good moment, then "rewarded".
+  status        String    @default("pending")
+  rewardedAt    DateTime?
+
+  createdAt     DateTime  @default(now())
+
+  @@index([referrerId])
+  @@index([code])
+}
+
+// ---------------------------------------------------------------------------
+// Communities (PATHWISE 2.0 Phase 9 / execution item 8)
+// ---------------------------------------------------------------------------
+
+// Topic- and subject-centered communities. A subject tree (parent/children),
+// seeded at boot and extendable later. Learning relevance drives the graph —
+// this is not a generic social network, and it is entirely account-gated:
+// guests can neither join nor post (enforced server-side in the routes).
+model Community {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description String    @default("")
+  parentId    String?
+  parent      Community?  @relation("CommunityTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Community[] @relation("CommunityTree")
+  createdAt   DateTime  @default(now())
+
+  members     CommunityMember[]
+  posts       CommunityPost[]
+
+  @@index([parentId])
+}
+
+model CommunityMember {
+  id          String    @id @default(cuid())
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "member" | "moderator" — moderation tooling grows in the safety phase.
+  role        String    @default("member")
+  joinedAt    DateTime  @default(now())
+
+  @@unique([communityId, userId])
+  @@index([userId])
+}
+
+model CommunityPost {
+  id          String    @id @default(cuid())
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  // "question" | "discussion" | "resource"
+  kind        String    @default("discussion")
+  title       String
+  body        String
+  // "visible" | "removed" — removal (author delete or moderation) keeps the
+  // row for the audit trail; queries filter on it.
+  status      String    @default("visible")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  replies     CommunityReply[]
+  reactions   CommunityReaction[]
+
+  @@index([communityId, status, createdAt])
+  @@index([authorId])
+}
+
+model CommunityReply {
+  id        String    @id @default(cuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  status    String    @default("visible")
+  createdAt DateTime  @default(now())
+
+  reactions CommunityReaction[]
+
+  @@index([postId, status, createdAt])
+  @@index([authorId])
+}
+
+// One row per (user, target, kind) — reacting again removes the row (toggle).
+// Exactly one of postId/replyId is set. SQLite treats NULLs as distinct in
+// unique indexes, so the two partial uniques coexist.
+model CommunityReaction {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String?
+  post      CommunityPost? @relation(fields: [postId], references: [id], onDelete: Cascade)
+  replyId   String?
+  reply     CommunityReply? @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  // "helpful" for now; more kinds later without a schema change.
+  kind      String    @default("helpful")
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, postId, kind])
+  @@unique([userId, replyId, kind])
+  @@index([postId])
+  @@index([replyId])
+}
+
+// Study Buddy Matching (PATHWISE 2.0 Phase 10). A pending request becomes a
+// buddy pair on acceptance — the pair is what Study Buddy Rooms and DMs
+// build on in later phases. One row per direction-agnostic pair attempt:
+// the (fromId, toId) unique blocks spam re-requests.
+model BuddyRequest {
+  id          String    @id @default(cuid())
+  fromId      String
+  from        User      @relation("BuddyRequestsSent", fields: [fromId], references: [id], onDelete: Cascade)
+  toId        String
+  to          User      @relation("BuddyRequestsReceived", fields: [toId], references: [id], onDelete: Cascade)
+  // "pending" | "accepted" | "declined"
+  status      String    @default("pending")
+  message     String?
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([fromId, toId])
+  @@index([toId, status])
+  @@index([fromId, status])
+}
+
+// Direct Messaging (PATHWISE 2.0 Phase 12). One conversation per user pair,
+// stored canonically (aId < bId, enforced in code). A conversation between
+// buddies starts "active"; anyone else's first message creates a "pending"
+// message request the recipient accepts or declines. DMs require a real
+// account — guests are refused in the routes.
+model Conversation {
+  id            String   @id @default(cuid())
+  aId           String
+  a             User     @relation("ConversationA", fields: [aId], references: [id], onDelete: Cascade)
+  bId           String
+  b             User     @relation("ConversationB", fields: [bId], references: [id], onDelete: Cascade)
+  // "pending" (message request) | "active" | "declined"
+  status        String   @default("pending")
+  requesterId   String
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  messages      DirectMessage[]
+  states        ConversationState[]
+
+  @@unique([aId, bId])
+  @@index([aId, lastMessageAt])
+  @@index([bId, lastMessageAt])
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body           String
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// Per-user, per-conversation flags: mute and read position.
+model ConversationState {
+  id             String    @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mutedAt        DateTime?
+  lastReadAt     DateTime?
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+// A block silences both directions: neither side can message the other, and
+// the blocked user can't start a new conversation with the blocker.
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+// Curated Educational Videos (PATHWISE 2.0 Phase 14). Editorial/admin
+// content ONLY — user video uploads are a later phase behind a disabled
+// flag. Rows are managed through CRON_SECRET-guarded ops endpoints and a
+// small idempotent seed; students browse, and topic names in topicsJson
+// drive matching against their knowledge maps.
+model CuratedVideo {
+  id           String   @id @default(cuid())
+  title        String
+  creator      String   // source channel/author, shown with attribution
+  url          String   // external source link (opens on the source site)
+  thumbnailUrl String?
+  subject      String   // e.g. "Biology" — aligns with community subjects
+  topicsJson   String   @default("[]") // topic names for matching
+  difficulty   Float?   // 0..1, same scale as Topic.difficulty
+  durationSec  Int?
+  transcript   String?  // optional; future search/grounding
+  status       String   @default("published") // "published" | "hidden"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  engagements  VideoEngagement[]
+
+  @@index([status, subject])
+}
+
+// Watch/like/save signals — the inputs the Personalized FYP (Phase 15)
+// ranks on. One row per (user, video, kind) for like/save toggles; "view"
+// rows accumulate.
+model VideoEngagement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId   String
+  video     CuratedVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  // "view" | "like" | "save"
+  kind      String
+  createdAt DateTime @default(now())
+
+  @@index([userId, kind])
+  @@index([videoId, kind])
+}
+
+// Hidden creator video infrastructure (PATHWISE 2.0 Phase 16). Built in
+// full, kept DARK: public posting and the public feed are unreachable while
+// FEATURE_USER_VIDEO_POSTING=false (enforced in routes/creator.ts; internal
+// testing goes through the CRON_SECRET header). Pipeline: upload →
+// AI analysis (screening + topic/subject extraction via the provider
+// abstraction) → creator review → publish. Transcoding/transcription are
+// deliberately deferred to the async-worker phase — fields exist for them.
+model CreatorVideo {
+  id           String   @id @default(cuid())
+  creatorId    String
+  creator      User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  title        String
+  caption      String   @default("")
+  storagePath  String   // original upload; transcoded renditions come later
+  thumbnailUrl String?
+  durationSec  Int?
+  subject      String?
+  topicsJson   String   @default("[]")
+  transcript   String?
+  // "processing" | "pending_review" | "published" | "rejected"
+  status       String   @default("processing")
+  // "pending" | "approved" | "flagged" | "rejected"
+  moderationStatus String @default("pending")
+  // "private" | "public" — public requires an approved moderation pass.
+  visibility   String   @default("private")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  events       CreatorVideoEvent[]
+  comments     CreatorVideoComment[]
+
+  @@index([creatorId, status])
+  @@index([status, visibility, moderationStatus])
+}
+
+// Prepared interaction infrastructure: views (with watch time/completion),
+// likes, saves, shares, reports. One row per (user, video, kind) for the
+// toggles; view/share rows accumulate.
+model CreatorVideoEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId   String
+  video     CreatorVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  // "view" | "like" | "save" | "share" | "report"
+  kind      String
+  watchMs   Int?
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([videoId, kind])
+  @@index([userId, kind])
+}
+
+model CreatorVideoComment {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     CreatorVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  status    String   @default("visible") // "visible" | "removed"
+  createdAt DateTime @default(now())
+
+  @@index([videoId, status, createdAt])
+}
+
+model CreatorFollow {
+  id         String   @id @default(cuid())
+  followerId String
+  follower   User     @relation("FollowingUser", fields: [followerId], references: [id], onDelete: Cascade)
+  creatorId  String
+  creator    User     @relation("FollowedCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([followerId, creatorId])
+  @@index([creatorId])
+}
+
+// Study Buddy Rooms (PATHWISE 2.0 Phases 11/19 — collaborative study MVP).
+// One room per buddy pair (canonical aId < bId), reusable across sessions.
+// The PATHWISE facilitator only speaks when BOTH participants have an
+// active help request — it facilitates, never replaces the students, and
+// every facilitator reply passes the same anti-answer-leak guard as the
+// 1:1 tutor. Voice/whiteboard/group rooms are future phases.
+model StudyRoom {
+  id        String    @id @default(cuid())
+  aId       String
+  a         User      @relation("StudyRoomA", fields: [aId], references: [id], onDelete: Cascade)
+  bId       String
+  b         User      @relation("StudyRoomB", fields: [bId], references: [id], onDelete: Cascade)
+  // Focus topic by NAME (derived metadata — never a link into private files).
+  topicName String?
+  status    String    @default("active") // "active" | "ended"
+  // Help requests: facilitator fires only when both are recent.
+  helpAAt   DateTime?
+  helpBAt   DateTime?
+  createdAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  messages  StudyRoomMessage[]
+
+  @@unique([aId, bId])
+}
+
+model StudyRoomMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      StudyRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  // Null sender = the PATHWISE facilitator.
+  senderId  String?
+  sender    User?    @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  role      String   @default("user") // "user" | "assistant"
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([roomId, createdAt])
+}
+
+// Built-in error tracking (beta readiness). Grouped by fingerprint and
+// deduped per day — one row per distinct failure per day, with a counter.
+// Read via GET /api/ops/errors; pruned after 30 days. A third-party
+// tracker can replace the transport later without moving capture points.
+model ErrorReport {
+  id          String   @id @default(cuid())
+  source      String   // "client" | "server"
+  message     String
+  stack       String?
+  url         String?
+  requestId   String?
+  userId      String?
+  fingerprint String
+  dayKey      String   // "YYYY-MM-DD"
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@unique([fingerprint, dayKey])
+  @@index([lastSeenAt])
+}
+
+// Abuse reporting (required before any social surface opens). Reports queue
+// for ops review; resolution either removes the target or dismisses.
+model ContentReport {
+  id         String    @id @default(cuid())
+  reporterId String
+  reporter   User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType String    // "post" | "reply"
+  targetId   String
+  // "spam" | "harassment" | "unsafe" | "off_topic" | "other"
+  reason     String
+  detail     String?
+  status     String    @default("open") // "open" | "actioned" | "dismissed"
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+}

@@ -1,0 +1,14 @@
+// Test build: compiles src (including *.test.ts) to dist-test/, which
+// `npm test` then runs with Node's built-in test runner.
+//
+// We compile with tsc rather than running the TypeScript directly through tsx.
+// tsx shells out to esbuild's service worker, which can't spawn on every
+// machine (see the dev-runner note in README.md) — and when it fails, a
+// perfectly good test file reports as a failure. tsc has no such dependency,
+// and it type-checks the tests as a side effect.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-test"
+  }
+}

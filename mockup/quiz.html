@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiz — Pathwise</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a href="courses.html" class="sidebar-logo"><div class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.2 17.25 L7.2 6.75 Q7.2 3.75 10.2 3.75 Q13.2 3.75 13.2 6.75 Q13.2 9.3 10.5 9.75 L7.8 10.2"/><circle cx="7.8" cy="10.2" r="1.1" fill="currentColor"/></svg></div> Pathwise</a>
+    <a href="courses.html" class="back-link"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" /></svg> All courses</a>
+    <div class="nav-list">
+      <a href="study-plan.html" class="nav-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+  <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg> Study plan</a>
+      <a href="quiz.html" class="nav-item active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg> Quiz</a>
+      <a href="socratic.html" class="nav-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
+  <path d="M20 2v4" />
+  <path d="M22 4h-4" />
+  <circle cx="4" cy="20" r="2" /></svg> Socratic mode</a>
+      <a href="dashboard.html" class="nav-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16" />
+  <path d="M18 17V9" />
+  <path d="M13 17V5" />
+  <path d="M8 17v-3" /></svg> Dashboard</a>
+    </div>
+    <div class="sidebar-streak">
+      <svg class="icon-lg" style="color:var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4" /></svg>
+      <div>
+        <div class="mono" style="font-weight:700; font-size:14px;">6 day streak</div>
+        <div style="font-size:11px; color:var(--ink-soft);">Best: 11 days</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" style="max-width:640px;">
+    <div class="topbar">
+      <div class="dots-row">
+        <div class="dot filled"></div>
+        <div class="dot filled"></div>
+        <div class="dot filled"></div>
+        <div class="dot current"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="streak-badge" style="color:var(--accent);"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4" /></svg> 3 in a row</span>
+        <span class="xp-chip">62 XP</span>
+        <a href="profile.html" class="avatar" style="width:32px; height:32px; font-size:12px;">A</a>
+      </div>
+    </div>
+
+    <div class="eyebrow">Cellular Respiration · Question 4 of 8</div>
+    <h1 style="font-size:20px; line-height:1.4; margin-bottom:24px;">
+      Which molecule is the final electron acceptor in the electron transport chain during aerobic respiration?
+    </h1>
+
+    <div style="display:flex; flex-direction:column; gap:11px; margin-bottom:22px;">
+      <div class="card" style="cursor:pointer; display:flex; align-items:center; gap:12px;">
+        <div style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border);"></div>
+        Carbon dioxide
+      </div>
+      <div class="card" style="cursor:pointer; display:flex; align-items:center; gap:12px; border:2px solid var(--success); background:var(--success-light);">
+        <div style="width:20px;height:20px;border-radius:50%;background:var(--success); display:flex;align-items:center;justify-content:center;"><svg class="icon-sm" style="color:white;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></div>
+        <span style="font-weight:700;">Oxygen</span>
+      </div>
+      <div class="card" style="cursor:pointer; display:flex; align-items:center; gap:12px;">
+        <div style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border);"></div>
+        Glucose
+      </div>
+      <div class="card" style="cursor:pointer; display:flex; align-items:center; gap:12px;">
+        <div style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border);"></div>
+        NADH
+      </div>
+    </div>
+
+    <div class="card" style="background:var(--success-light); border:none; margin-bottom:20px; display:flex; gap:10px; align-items:flex-start;">
+      <svg class="icon" style="color:#10763F; margin-top:2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5.8 11.3 2 22l10.7-3.79" />
+  <path d="M4 3h.01" />
+  <path d="M22 8h.01" />
+  <path d="M15 2h.01" />
+  <path d="M22 20h.01" />
+  <path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10" />
+  <path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17" />
+  <path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7" />
+  <path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z" /></svg>
+      <div>
+        <div style="font-weight:700; color:#10763F; margin-bottom:3px; font-size:14px;">That's correct</div>
+        <div style="font-size:13px; color:var(--ink-soft);">Oxygen accepts electrons at the end of the chain, forming water — this is why aerobic respiration needs O₂.</div>
+      </div>
+    </div>
+
+    <a href="dashboard.html" class="btn btn-primary btn-block">Next question</a>
+  </main>
+</div>
+
+<div class="tab-bar">
+  <a href="study-plan.html" class="tab-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+  <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>Plan</a>
+  <a href="quiz.html" class="tab-item active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg>Quiz</a>
+  <a href="socratic.html" class="tab-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
+  <path d="M20 2v4" />
+  <path d="M22 4h-4" />
+  <circle cx="4" cy="20" r="2" /></svg>Socratic</a>
+  <a href="dashboard.html" class="tab-item"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16" />
+  <path d="M18 17V9" />
+  <path d="M13 17V5" />
+  <path d="M8 17v-3" /></svg>Progress</a>
+</div>
+</body>
+</html>
