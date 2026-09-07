@@ -273,7 +273,7 @@ export async function usageSummary(sinceDays = 7) {
     _sum: { costMicroUsd: true, promptTokens: true, completionTokens: true },
     _count: { _all: true },
   });
-  return rows.map((r) => ({
+  return rows.map((r: (typeof rows)[number]) => ({
     operation: r.operation,
     calls: r._count._all,
     promptTokens: r._sum.promptTokens ?? 0,

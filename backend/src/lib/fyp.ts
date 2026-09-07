@@ -38,14 +38,14 @@ export async function buildFeed(userId: string): Promise<FeedEntry[]> {
     prisma.curatedVideo.findMany({ where: { status: "published" } }),
   ]);
 
-  const topicRows: TopicRow[] = topics.map((t) => ({
+  const topicRows: TopicRow[] = topics.map((t: (typeof topics)[number]) => ({
     topicId: t.id,
     courseId: t.knowledgeMap.courseId,
     name: t.name,
     mastery: t.masteries[0]?.mastery ?? 0,
   }));
 
-  const records: VideoRecord[] = videos.map((v) => ({
+  const records: VideoRecord[] = videos.map((v: (typeof videos)[number]) => ({
     id: v.id,
     title: v.title,
     creator: v.creator,
@@ -56,14 +56,14 @@ export async function buildFeed(userId: string): Promise<FeedEntry[]> {
     difficulty: v.difficulty,
     durationSec: v.durationSec,
   }));
-  const byId = new Map(records.map((r) => [r.id, r]));
+  const byId = new Map(records.map((r: VideoRecord) => [r.id, r]));
 
   const likedIds = engagements
-    .filter((e) => e.kind === "like" || e.kind === "save")
-    .map((e) => e.videoId);
-  const likedTopics = likedIds.flatMap((id) => byId.get(id)?.topics ?? []);
+    .filter((e: (typeof engagements)[number]) => e.kind === "like" || e.kind === "save")
+    .map((e: (typeof engagements)[number]) => e.videoId);
+  const likedTopics = likedIds.flatMap((id: string) => byId.get(id)?.topics ?? []);
   const likedSubjects = likedIds
-    .map((id) => byId.get(id)?.subject)
+    .map((id: string) => byId.get(id)?.subject)
     .filter((s): s is string => Boolean(s));
 
   const ranked = rankFeed(
@@ -80,8 +80,8 @@ export async function buildFeed(userId: string): Promise<FeedEntry[]> {
       likedTopics,
       likedSubjects,
       watchedVideoIds: engagements
-        .filter((e) => e.kind === "view")
-        .map((e) => e.videoId),
+        .filter((e: (typeof engagements)[number]) => e.kind === "view")
+        .map((e: (typeof engagements)[number]) => e.videoId),
     },
     records
   );

@@ -112,7 +112,7 @@ export async function funnel(sinceDays = 30): Promise<FunnelSummary> {
     _count: { _all: true },
   });
   const count = (n: EventName) =>
-    rows.find((r) => r.name === n)?._count._all ?? 0;
+    rows.find((r: (typeof rows)[number]) => r.name === n)?._count._all ?? 0;
 
   return {
     signups: count("signup"),
