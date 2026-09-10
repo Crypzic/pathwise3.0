@@ -10,6 +10,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { isGuestUser } from "../lib/guests.js";
 import { findMatches, signalsFor } from "../lib/matching.js";
+import { blockedUserIds, isBlockedEitherWay } from "../lib/buddies.js";
+import { pairKey } from "../lib/dmModel.js";
 import { deliver } from "../lib/notifications.js";
 import { track } from "../lib/analytics.js";
 import { screenText } from "../lib/communityModel.js";
@@ -115,6 +117,10 @@ export default async function buddyRoutes(app: FastifyInstance) {
       }
       if (!them?.buddyPrefs.discoverable) {
         return reply.code(404).send({ error: "That learner isn't discoverable." });
+      }
+      // A block in either direction silences buddy requests too.
+      if (await isBlockedEitherWay(req.user.sub, toId)) {
+        return reply.code(403).send({ error: "You can't send this learner a request." });
       }
 
       // A pair in either direction (pending or accepted) blocks a new request.
@@ -224,13 +230,23 @@ export default async function buddyRoutes(app: FastifyInstance) {
         data: { status, respondedAt: new Date() },
       });
       if (status === "accepted") {
+        // Becoming buddies opens the DM lane immediately: the conversation
+        // exists (active) without either side having to search for the other.
+        // Upsert = no duplicate if they'd already messaged; an old pending
+        // request upgrades to active since buddies talk without gatekeeping.
+        const [aId, bId] = pairKey(request.fromId, req.user.sub);
+        await prisma.conversation.upsert({
+          where: { aId_bId: { aId, bId } },
+          create: { aId, bId, requesterId: request.fromId, status: "active" },
+          update: { status: "active" },
+        });
         await deliver(
           request.fromId,
           {
             kind: "buddy",
             title: "Buddy request accepted",
             body: `${request.to.username ?? request.to.name} accepted — you're study buddies now.`,
-            deepLink: "/buddies",
+            deepLink: "/messages",
           },
           `buddy-accepted#${request.id}`
         );
@@ -259,15 +275,19 @@ export default async function buddyRoutes(app: FastifyInstance) {
           to: { select: { id: true, name: true, username: true } },
         },
       });
+      // A blocked pair stays out of sight everywhere, buddy list included.
+      const blocked = await blockedUserIds(req.user.sub);
       return reply.send({
-        buddies: pairs.map((p) => {
-          const other = p.fromId === req.user.sub ? p.to : p.from;
-          return {
-            userId: other.id,
-            name: other.username ?? other.name,
-            since: p.respondedAt,
-          };
-        }),
+        buddies: pairs
+          .map((p) => {
+            const other = p.fromId === req.user.sub ? p.to : p.from;
+            return {
+              userId: other.id,
+              name: other.username ?? other.name,
+              since: p.respondedAt,
+            };
+          })
+          .filter((b) => !blocked.has(b.userId)),
       });
     }
   );

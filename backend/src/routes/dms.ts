@@ -10,7 +10,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { isGuestUser } from "../lib/guests.js";
 import { canSend, pairKey } from "../lib/dmModel.js";
-import { areBuddies } from "../lib/buddies.js";
+import { areBuddies, blockedUserIds, isBlockedEitherWay } from "../lib/buddies.js";
 import { screenText } from "../lib/communityModel.js";
 import { deliver } from "../lib/notifications.js";
 import { track } from "../lib/analytics.js";
@@ -29,20 +29,6 @@ const messageSchema = z.object({
 function displayName(u: { name: string; username: string | null }): string {
   return u.username ?? u.name;
 }
-
-async function isBlockedEitherWay(x: string, y: string): Promise<boolean> {
-  const block = await prisma.userBlock.findFirst({
-    where: {
-      OR: [
-        { blockerId: x, blockedId: y },
-        { blockerId: y, blockedId: x },
-      ],
-    },
-    select: { id: true },
-  });
-  return Boolean(block);
-}
-
 
 export default async function dmRoutes(app: FastifyInstance) {
   // Conversation list: active + incoming requests, with unread counts.
@@ -80,8 +66,12 @@ export default async function dmRoutes(app: FastifyInstance) {
         lastMessage: string | null;
         lastMessageAt: Date;
       }[] = [];
+      // Blocked pairs vanish from the inbox — the thread comes back if the
+      // block is lifted, nothing is deleted.
+      const blocked = await blockedUserIds(me);
       for (const c of conversations) {
         const other = c.aId === me ? c.b : c.a;
+        if (blocked.has(other.id)) continue;
         const state = c.states[0];
         const unread = await prisma.directMessage.count({
           where: {
@@ -386,6 +376,107 @@ export default async function dmRoutes(app: FastifyInstance) {
       }
       await track(me, "dm_block_toggled", { userId, on });
       return reply.send({ blocked: on });
+    }
+  );
+
+  // Who have I blocked? Powers the "Blocked users" manager in settings.
+  app.get(
+    "/api/dms/blocked",
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const rows = await prisma.userBlock.findMany({
+        where: { blockerId: req.user.sub },
+        orderBy: { createdAt: "desc" },
+        include: {
+          blocked: { select: { id: true, name: true, username: true } },
+        },
+      });
+      return reply.send({
+        blocked: rows.map((b) => ({
+          userId: b.blocked.id,
+          name: displayName(b.blocked),
+          since: b.createdAt,
+        })),
+      });
+    }
+  );
+
+  // Find my conversation with one user — lets a buddy row jump straight
+  // into the thread. Buddy pairs from before conversations auto-opened on
+  // accept get healed here: if we're buddies and no conversation exists,
+  // one is created (active) on the spot.
+  app.get(
+    "/api/dms/with/:userId",
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const me = req.user.sub;
+      const { userId } = req.params as { userId: string };
+      const [aId, bId] = pairKey(me, userId);
+      let conversation = await prisma.conversation.findUnique({
+        where: { aId_bId: { aId, bId } },
+        select: { id: true, status: true },
+      });
+      if (
+        !conversation &&
+        !(await isBlockedEitherWay(me, userId)) &&
+        (await areBuddies(me, userId))
+      ) {
+        conversation = await prisma.conversation.create({
+          data: { aId, bId, requesterId: me, status: "active" },
+          select: { id: true, status: true },
+        });
+      }
+      return reply.send({ conversation });
+    }
+  );
+
+  // Report a USER (not a specific message) into the same moderation queue.
+  // Reasons follow the safety spec; the reviewer decides what happens next —
+  // resolution never deletes an account automatically.
+  app.post(
+    "/api/users/:userId/report",
+    {
+      preHandler: [app.authenticate],
+      config: { rateLimit: { max: 10, timeWindow: "10 minutes" } },
+    },
+    async (req, reply) => {
+      if (await isGuestUser(req.user.sub)) {
+        return reply.code(403).send({ error: GUEST_MESSAGE });
+      }
+      const me = req.user.sub;
+      const { userId } = req.params as { userId: string };
+      if (userId === me) {
+        return reply.code(400).send({ error: "That's you." });
+      }
+      const parsed = z
+        .object({
+          reason: z.enum(["harassment", "abuse", "spam", "inappropriate", "other"]),
+          detail: z.string().max(1000).optional(),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Invalid report" });
+      }
+      const target = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!target) {
+        return reply.code(404).send({ error: "Learner not found" });
+      }
+      await prisma.contentReport.create({
+        data: {
+          reporterId: me,
+          targetType: "user",
+          targetId: userId,
+          reason: parsed.data.reason,
+          detail: parsed.data.detail ?? null,
+        },
+      });
+      await track(me, "user_reported", { userId, reason: parsed.data.reason });
+      return reply
+        .code(201)
+        .send({ message: "Thanks — a human will review this." });
     }
   );
 

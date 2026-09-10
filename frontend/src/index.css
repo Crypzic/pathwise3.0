@@ -404,13 +404,23 @@ button { font-family: inherit; }
   display: flex; align-items: center; gap: 10px;
   padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
 }
-.rail-toggle {
-  background: none; border: none; cursor: pointer; padding: 6px;
-  border-radius: var(--r-sm); display: flex; color: var(--ink-soft);
-  transition: background 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+/* ---- Icon buttons: ONE treatment for every icon-only control ----
+   (sidebar toggle, notification bell, per-item overflow menus). A subtle
+   contained surface on hover, a pressed state, and a 38px hit area that
+   stays comfortable on touch screens. */
+.icon-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; flex-shrink: 0; padding: 0;
+  background: none; border: 1.5px solid transparent; border-radius: 12px;
+  color: var(--ink-soft); cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
-.rail-toggle:hover { background: var(--surface-alt); }
-.rail-toggle.open { transform: rotate(90deg); }
+.icon-btn:hover { background: var(--surface-alt); color: var(--ink); }
+.icon-btn:active { transform: scale(0.93); }
+.icon-btn.open,
+.icon-btn[aria-expanded="true"] {
+  background: var(--surface-alt); border-color: var(--border); color: var(--ink);
+}
 
 .sidebar-drawer {
   position: fixed; top: 0; left: 0; width: 260px;
@@ -485,31 +495,28 @@ button { font-family: inherit; }
   }
 }
 
-/* ---- Notification bell + inbox ---- */
+/* ---- Notification bell + the /notifications inbox page ---- */
 
-.bell-wrap { position: relative; }
-.bell-btn {
-  background: none; border: none; cursor: pointer; padding: 8px;
-  border-radius: var(--r-sm); color: var(--ink-soft); display: flex;
-}
-.bell-btn:hover { background: var(--surface-alt); }
 .bell-dot {
-  position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px;
+  position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px;
   border-radius: 20px; background: var(--accent); color: white;
   font-size: 10px; font-weight: 700; display: flex; align-items: center;
   justify-content: center; padding: 0 4px; font-family: var(--font-mono);
 }
-.notif-panel {
-  position: absolute; right: 0; top: calc(100% + 8px); width: 320px;
-  max-width: calc(100vw - 32px); background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg); z-index: 120; overflow: hidden;
+.notif-row {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 12px; align-items: flex-start;
 }
-.notif-row { padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .notif-row:last-child { border-bottom: none; }
 .notif-row.unread { background: var(--primary-light); }
-.notif-row .n-title { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
-.notif-row .n-body { font-size: 12px; color: var(--ink-soft); line-height: 1.45; }
+.notif-row .n-title { font-weight: 700; font-size: 13.5px; margin-bottom: 3px; }
+.notif-row .n-body { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+.notif-row .n-time { font-size: 11px; color: var(--ink-faint); white-space: nowrap; margin-left: auto; }
+.notif-row .n-unread-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  flex-shrink: 0; margin-top: 6px;
+}
+.notif-row.read .n-unread-dot { background: transparent; }
 
 /* ---- XP / rank chip in the rail ---- */
 
@@ -663,8 +670,8 @@ button { font-family: inherit; }
   .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
   .page-head .btn { width: 100%; }
   .dots-row { flex-wrap: wrap; row-gap: 6px; }
-  .notif-panel { width: min(92vw, 340px); right: -8px; }
   .topbar { margin-bottom: 18px; }
+  .rail { padding: 10px 12px; gap: 8px; }
 }
 @media (max-width: 520px) {
   .profile-trigger .name { display: none; }
@@ -688,8 +695,10 @@ html, body { overflow-x: hidden; }
 .page-fade-in > *:nth-child(6) { animation-delay: 0.2s; }
 
 @media (hover: hover) {
-  .card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
-  .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .card { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+  /* Only cards that ARE actions lift — a static settings card sitting still
+     while a post card rises is what tells the eye what's clickable. */
+  a.card:hover, button.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
   .nav-item { transition: background 0.18s ease, transform 0.18s ease; }
   .nav-item:hover { transform: translateX(3px); }
 }
@@ -698,6 +707,44 @@ html, body { overflow-x: hidden; }
 .quiz-option:active { transform: scale(0.985); }
 .pill { transition: background 0.18s ease, color 0.18s ease; }
 .progress-fill { transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* ---- Shared component language (Isaac's UX review, items 10-11) ---- */
+
+/* Small button variant — replaces the ad-hoc inline font-size tweaks. */
+.btn-sm { padding: 7px 13px; font-size: 12.5px; }
+
+/* Mini section headings between card groups (buddies, requests, matches). */
+.section-label {
+  font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px;
+  color: var(--ink); margin: 22px 0 12px;
+}
+.section-label:first-of-type { margin-top: 18px; }
+
+/* Toolbar rows (search + actions) get consistent breathing room. */
+.toolbar { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.toolbar .input { flex: 1; min-width: 200px; }
+
+/* Per-item overflow menu (block / report). Anchored to its .icon-btn. */
+.user-menu-wrap { position: relative; }
+.user-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); min-width: 190px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--shadow-lg); z-index: 60;
+  overflow: hidden; padding: 4px;
+  animation: menuIn 0.14s ease both;
+}
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.user-menu button {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 9px 12px; font-size: 13px; font-weight: 600; color: var(--ink);
+  cursor: pointer; border-radius: 8px; font-family: var(--font-body);
+}
+.user-menu button:hover { background: var(--surface-alt); }
+.user-menu button.danger { color: var(--danger); }
+.user-menu .menu-note {
+  padding: 7px 12px 5px; font-size: 11px; font-weight: 700;
+  color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.5px;
+}
 
 /* 3D flashcard flip (Quiz review deck). */
 .flip-scene { perspective: 1100px; }

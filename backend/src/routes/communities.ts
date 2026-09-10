@@ -648,6 +648,16 @@ export default async function communityRoutes(app: FastifyInstance) {
         content = cv
           ? `[creator_video ${cv.status}] ${cv.title}\n${cv.caption.slice(0, 400)}`
           : null;
+      } else if (r.targetType === "user") {
+        // Reported users (safety spec). Resolution is human-only: "remove"
+        // deliberately touches nothing here — accounts are never auto-deleted.
+        const u = await prisma.user.findUnique({
+          where: { id: r.targetId },
+          select: { name: true, username: true, deletedAt: true },
+        });
+        content = u
+          ? `[user${u.deletedAt ? " (deleted)" : ""}] ${u.username ?? u.name}`
+          : null;
       }
       out.push({
         id: r.id,

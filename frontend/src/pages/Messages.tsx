@@ -8,10 +8,12 @@ import { api, ApiError } from "../lib/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { MailIcon, SendIcon } from "../components/icons";
+import { UserActions } from "../components/UserActions";
 import {
   EmptyState,
   ErrorState,
   InlineError,
+  InlineNotice,
   SkeletonRows,
 } from "../components/states";
 
@@ -50,6 +52,7 @@ function Thread({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const { data, loading, error: loadError, reload } = useApi<ThreadResponse>(
     `/api/dms/${id}`
   );
@@ -97,18 +100,6 @@ function Thread({
     }
   }
 
-  async function block() {
-    if (!data) return;
-    if (!window.confirm(`Block ${data.conversation.with}? Neither of you will be able to message the other.`)) return;
-    try {
-      await api.post("/api/dms/block", { userId: data.conversation.withId, on: true });
-      navigate("/messages");
-      onChanged();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Block failed");
-    }
-  }
-
   async function report(messageId: string) {
     try {
       await api.post(`/api/dms/messages/${messageId}/report`, { reason: "other" });
@@ -137,17 +128,23 @@ function Thread({
         }}
       >
         <div style={{ fontWeight: 700, fontSize: 15 }}>{c.with}</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button className="btn btn-ghost" style={{ fontSize: 11.5, padding: "4px 8px" }} onClick={toggleMute}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button className="btn btn-ghost btn-sm" onClick={toggleMute}>
             {c.muted ? "Unmute" : "Mute"}
           </button>
-          <button
-            className="btn btn-ghost"
-            style={{ fontSize: 11.5, padding: "4px 8px", color: "var(--danger)" }}
-            onClick={block}
-          >
-            Block
-          </button>
+          <UserActions
+            userId={c.withId}
+            name={c.with}
+            onNotice={(m) => {
+              setError(null);
+              setNotice(m);
+            }}
+            onError={setError}
+            onBlocked={() => {
+              onChanged();
+              navigate("/messages");
+            }}
+          />
         </div>
       </div>
 
@@ -208,6 +205,7 @@ function Thread({
       </div>
 
       <InlineError message={error} />
+      <InlineNotice message={notice} />
 
       {(c.status === "active" || !c.incomingRequest) && (
         <div style={{ display: "flex", gap: 8 }}>
@@ -328,7 +326,9 @@ export default function Messages() {
                   )}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 3 }}>
-                  {c.incomingRequest ? "Message request" : c.lastMessage ?? "…"}
+                  {c.incomingRequest
+                    ? "Message request"
+                    : c.lastMessage ?? "Say hi — start the conversation"}
                 </div>
               </button>
             ))

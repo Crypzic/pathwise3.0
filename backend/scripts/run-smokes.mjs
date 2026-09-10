@@ -36,6 +36,7 @@ const SUITES = [
   { name: "socratic3", script: "smoke-socratic3.mjs" },
   { name: "learning", script: "smoke-learning.mjs" },
   { name: "communities", script: "smoke-communities.mjs" },
+  { name: "avatars", script: "smoke-avatars.mjs" },
   { name: "buddies", script: "smoke-buddies.mjs" },
   { name: "dms", script: "smoke-dms.mjs" },
   { name: "videos", script: "smoke-videos.mjs" },

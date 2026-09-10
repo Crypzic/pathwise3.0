@@ -5,6 +5,7 @@
 // Signals are the self-declared learner profile, topic NAMES from knowledge
 // maps, and community membership ids — exactly what the roadmap allows.
 import { prisma } from "./prisma.js";
+import { blockedUserIds } from "./buddies.js";
 import {
   normalizeBuddyPrefs,
   parseStoredList,
@@ -90,8 +91,12 @@ export async function findMatches(userId: string, limit = 10) {
     take: 500,
   });
 
+  // A block in either direction removes the pair from each other's world.
+  const blocked = await blockedUserIds(userId);
+
   const signals: MatchSignals[] = [];
   for (const c of candidates) {
+    if (blocked.has(c.id)) continue;
     const s = await signalsFor(c.id);
     if (s?.buddyPrefs.discoverable) signals.push(s);
   }

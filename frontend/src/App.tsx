@@ -26,6 +26,7 @@ import CommunityView from "./pages/CommunityView";
 import PostView from "./pages/PostView";
 import Buddies from "./pages/Buddies";
 import Messages from "./pages/Messages";
+import Notifications from "./pages/Notifications";
 import Videos from "./pages/Videos";
 import VideoWatch from "./pages/VideoWatch";
 import CreatorStudio from "./pages/CreatorStudio";
@@ -128,6 +129,8 @@ function AppRoutes() {
       {/* Direct messages (PATHWISE 2.0 Phase 12). */}
       <Route path="/messages" element={<Protected><Messages /></Protected>} />
       <Route path="/messages/:conversationId" element={<Protected><Messages /></Protected>} />
+
+      <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
       {/* Curated educational videos (PATHWISE 2.0 Phase 14). */}
       <Route path="/videos" element={<Protected><Videos /></Protected>} />
       <Route path="/videos/:id" element={<Protected><VideoWatch /></Protected>} />

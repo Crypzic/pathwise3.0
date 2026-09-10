@@ -7,7 +7,8 @@ import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
-import { UsersIcon } from "../components/icons";
+import { MailIcon, UsersIcon } from "../components/icons";
+import { UserActions } from "../components/UserActions";
 import {
   EmptyState,
   ErrorState,
@@ -110,6 +111,9 @@ export default function Buddies() {
     setActionError(null);
     try {
       await api.post(`/api/buddies/requests/${id}/respond`, { action });
+      if (action === "accept") {
+        setNotice("You're buddies now — they're in your Messages too.");
+      }
       requestsState.reload();
       buddiesState.reload();
     } catch (err) {
@@ -117,6 +121,29 @@ export default function Buddies() {
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Jump into the DM thread with this buddy (created on accept; older
+   *  pairs get their conversation created by the endpoint on first use). */
+  async function openMessages(userId: string) {
+    setBusy(`dm-${userId}`);
+    setActionError(null);
+    try {
+      const res = await api.get<{ conversation: { id: string } | null }>(
+        `/api/dms/with/${userId}`
+      );
+      navigate(res.conversation ? `/messages/${res.conversation.id}` : "/messages");
+    } catch {
+      navigate("/messages");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function afterBlock() {
+    buddiesState.reload();
+    matchesState.reload();
+    requestsState.reload();
   }
 
   const incoming = requestsState.data?.incoming ?? [];
@@ -173,10 +200,8 @@ export default function Buddies() {
 
       {incoming.length > 0 && (
         <>
-          <h2 style={{ fontSize: 14.5, fontWeight: 700, margin: "16px 0 10px" }}>
-            Requests for you
-          </h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 className="section-label">Requests for you</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {incoming.map((r) => (
               <div
                 key={r.id}
@@ -224,20 +249,18 @@ export default function Buddies() {
 
       {buddies.length > 0 && (
         <>
-          <h2 style={{ fontSize: 14.5, fontWeight: 700, margin: "16px 0 10px" }}>
-            Your buddies
-          </h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <h2 className="section-label">Your buddies</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {buddies.map((b) => (
               <div
                 key={b.userId}
                 className="card"
                 style={{
-                  padding: 12,
+                  padding: "14px 16px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  gap: 10,
+                  gap: 12,
                   flexWrap: "wrap",
                 }}
               >
@@ -247,38 +270,51 @@ export default function Buddies() {
                     since {new Date(b.since).toLocaleDateString()}
                   </span>
                 </span>
-                <button
-                  className="btn btn-primary"
-                  style={{ fontSize: 12 }}
-                  disabled={busy === `room-${b.userId}`}
-                  onClick={async () => {
-                    setBusy(`room-${b.userId}`);
-                    try {
-                      const res = await api.post<{ room: { id: string } }>(
-                        "/api/rooms",
-                        { buddyId: b.userId }
-                      );
-                      navigate(`/rooms/${res.room.id}`);
-                    } catch (err) {
-                      setActionError(
-                        err instanceof ApiError ? err.message : "Couldn't open the room"
-                      );
-                    } finally {
-                      setBusy(null);
-                    }
-                  }}
-                >
-                  Open study room
-                </button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={busy === `dm-${b.userId}`}
+                    onClick={() => openMessages(b.userId)}
+                  >
+                    <MailIcon cls="icon-sm" /> Message
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy === `room-${b.userId}`}
+                    onClick={async () => {
+                      setBusy(`room-${b.userId}`);
+                      try {
+                        const res = await api.post<{ room: { id: string } }>(
+                          "/api/rooms",
+                          { buddyId: b.userId }
+                        );
+                        navigate(`/rooms/${res.room.id}`);
+                      } catch (err) {
+                        setActionError(
+                          err instanceof ApiError ? err.message : "Couldn't open the room"
+                        );
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    Study room
+                  </button>
+                  <UserActions
+                    userId={b.userId}
+                    name={b.name}
+                    onNotice={setNotice}
+                    onError={setActionError}
+                    onBlocked={afterBlock}
+                  />
+                </div>
               </div>
             ))}
           </div>
         </>
       )}
 
-      <h2 style={{ fontSize: 14.5, fontWeight: 700, margin: "18px 0 10px" }}>
-        Suggested matches
-      </h2>
+      <h2 className="section-label">Suggested matches</h2>
 
       {matchesState.loading ? (
         <SkeletonRows rows={3} height={92} />
@@ -302,19 +338,19 @@ export default function Buddies() {
           }
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {matchesState.data!.matches.map((m) => (
-            <div key={m.userId} className="card" style={{ padding: 16 }}>
+            <div key={m.userId} className="card" style={{ padding: 18 }}>
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  gap: 10,
+                  gap: 12,
                   flexWrap: "wrap",
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <span style={{ fontWeight: 700, fontSize: 14.5 }}>{m.name}</span>
                   <span
                     className="pill pill-coral"
@@ -322,7 +358,7 @@ export default function Buddies() {
                   >
                     {m.score}% match
                   </span>
-                  <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 5 }}>
                     {[
                       m.field,
                       m.academicLevel ? LEVEL_LABEL[m.academicLevel] ?? m.academicLevel : null,
@@ -331,23 +367,31 @@ export default function Buddies() {
                       .join(" · ")}
                   </div>
                 </div>
-                {buddyIds.has(m.userId) ? (
-                  <span className="pill pill-muted">Buddies ✓</span>
-                ) : outgoingIds.has(m.userId) ? (
-                  <span className="pill pill-muted">Requested</span>
-                ) : (
-                  <button
-                    className="btn btn-primary"
-                    style={{ fontSize: 12.5 }}
-                    disabled={busy === m.userId}
-                    onClick={() => sendRequest(m)}
-                  >
-                    Ask to study together
-                  </button>
-                )}
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {buddyIds.has(m.userId) ? (
+                    <span className="pill pill-muted">Buddies ✓</span>
+                  ) : outgoingIds.has(m.userId) ? (
+                    <span className="pill pill-muted">Requested</span>
+                  ) : (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={busy === m.userId}
+                      onClick={() => sendRequest(m)}
+                    >
+                      Ask to study together
+                    </button>
+                  )}
+                  <UserActions
+                    userId={m.userId}
+                    name={m.name}
+                    onNotice={setNotice}
+                    onError={setActionError}
+                    onBlocked={afterBlock}
+                  />
+                </div>
               </div>
               {m.reasons.length > 0 && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
                   {m.reasons.map((r) => (
                     <span key={r} className="pill pill-muted" style={{ fontSize: 11 }}>
                       {r}

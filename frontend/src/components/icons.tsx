@@ -32,6 +32,24 @@ export const PlusIcon = ({ cls = "icon", style }: IconProps) => (
   </svg>
 );
 
+// Sidebar toggle (lucide "panel-left") — reads as "open/collapse the
+// sidebar" the way modern productivity apps do, not as a back button.
+export const PanelLeftIcon = ({ cls = "icon", style }: IconProps) => (
+  <svg {...base(cls)} style={style}>
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M9 3v18" />
+  </svg>
+);
+
+// Three-dot overflow for per-item menus (block, report, …).
+export const MoreIcon = ({ cls = "icon", style }: IconProps) => (
+  <svg {...base(cls)} style={style}>
+    <circle cx="12" cy="5" r="1" fill="currentColor" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+    <circle cx="12" cy="19" r="1" fill="currentColor" />
+  </svg>
+);
+
 export const ChartIcon = ({ cls = "icon", style }: IconProps) => (
   <svg {...base(cls)} style={style}>
     <path d="M3 3v16a2 2 0 0 0 2 2h16" />

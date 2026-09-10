@@ -60,21 +60,20 @@ function CommunityCard({
           >
             {c.name}
           </Link>
-          <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 4 }}>
+          <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.5 }}>
             {c.description}
           </div>
-          <div style={{ fontSize: 11.5, color: "var(--ink-faint)", marginTop: 6 }}>
+          <div style={{ fontSize: 11.5, color: "var(--ink-faint)", marginTop: 8 }}>
             {c.members} member{c.members === 1 ? "" : "s"} · {c.posts} post
             {c.posts === 1 ? "" : "s"}
           </div>
         </div>
         <button
-          className={c.joined ? "btn btn-ghost" : "btn btn-primary"}
+          className={c.joined ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm"}
           disabled={busy === c.id}
           onClick={() => onToggle(c)}
-          style={{ fontSize: 12.5 }}
         >
-          {c.joined ? "Joined ✓" : "Join"}
+          {c.joined ? "Leave" : "Join"}
         </button>
       </div>
 
@@ -158,6 +157,10 @@ export default function Communities() {
   }
 
   async function toggle(c: CommunityRow) {
+    // Leaving is deliberate — confirm. Membership only, never the community.
+    if (c.joined && !window.confirm(`Are you sure you want to leave ${c.name}?`)) {
+      return;
+    }
     setBusy(c.id);
     try {
       await api.post(`/api/communities/${c.id}/${c.joined ? "leave" : "join"}`, {});
@@ -251,7 +254,7 @@ export default function Communities() {
           e.preventDefault();
           setSearch(query.trim());
         }}
-        style={{ display: "flex", gap: 8, marginBottom: 14 }}
+        className="toolbar"
         role="search"
       >
         <label className="sr-only" htmlFor="community-search">
@@ -311,7 +314,7 @@ export default function Communities() {
           }
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {roots.map((c) => (
             <CommunityCard
               key={c.id}

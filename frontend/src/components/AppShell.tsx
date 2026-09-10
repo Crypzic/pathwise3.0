@@ -2,7 +2,7 @@
 // sidebar drawer, used on every signed-in screen. Profile stays as the top-right
 // avatar trigger — deliberately NOT in the drawer.
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "../lib/auth";
 import { useFeatures } from "../lib/features";
 import { api } from "../lib/api";
@@ -16,7 +16,7 @@ import {
   FlameIcon,
   ChevronDownIcon,
   GamepadIcon,
-  ArrowLeftIcon,
+  PanelLeftIcon,
   BellIcon,
   MailIcon,
   UsersIcon,
@@ -27,21 +27,15 @@ function navClass({ isActive }: { isActive: boolean }) {
   return isActive ? "nav-item active" : "nav-item";
 }
 
-interface NotificationRow {
-  id: string;
-  kind: string;
-  title: string;
-  body: string;
-  deepLink: string | null;
-  read: boolean;
-}
+/** The Notifications page fires this after changing read state, so the badge
+ *  here updates immediately instead of waiting for the next poll. */
+export const NOTIFICATIONS_CHANGED_EVENT = "pathwise:notifications-changed";
 
-/** Notification bell + dropdown inbox (Step 12). */
+/** Bell = badge + link to the dedicated /notifications page (Step 12,
+ *  reshaped per Isaac's UX review — the inbox lives on its own page now). */
 function NotificationBell() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<NotificationRow[]>([]);
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [unread, setUnread] = useState(0);
 
   // Poll rather than hold a socket open — notifications here are day-scale, so
   // a socket would be a lot of infrastructure for no user-visible gain.
@@ -49,91 +43,36 @@ function NotificationBell() {
     let active = true;
     const load = () => {
       api
-        .get<{ notifications: NotificationRow[] }>("/api/notifications")
+        .get<{ unreadCount: number }>("/api/notifications")
         .then((res) => {
-          if (active) setRows(res.notifications);
+          if (active) setUnread(res.unreadCount);
         })
         .catch(() => {
-          // A failed inbox poll is not worth surfacing.
+          // A failed badge poll is not worth surfacing.
         });
     };
     load();
     const timer = window.setInterval(load, 120_000);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, load);
     return () => {
       active = false;
       window.clearInterval(timer);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, load);
     };
   }, []);
 
-  // Close on outside click / Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const unread = rows.filter((r) => !r.read).length;
-
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && unread > 0) {
-      setRows((prev) => prev.map((r) => ({ ...r, read: true })));
-      await api.post("/api/notifications/read", {}).catch(() => {});
-    }
-  }
-
   return (
-    <div className="bell-wrap" ref={wrapRef}>
-      <button
-        className="bell-btn"
-        onClick={toggle}
-        aria-label={
-          unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
-        }
-        aria-expanded={open}
-      >
-        <BellIcon cls="icon" />
-        {unread > 0 && <span className="bell-dot">{unread > 9 ? "9+" : unread}</span>}
-      </button>
-
-      {open && (
-        <div className="notif-panel">
-          {rows.length === 0 ? (
-            <div className="notif-row">
-              <div className="n-body">Nothing yet — reminders will show up here.</div>
-            </div>
-          ) : (
-            rows.slice(0, 8).map((r) => (
-              <div
-                key={r.id}
-                className="notif-row"
-                onClick={() => {
-                  if (r.deepLink) {
-                    setOpen(false);
-                    navigate(r.deepLink);
-                  }
-                }}
-                style={{ cursor: r.deepLink ? "pointer" : "default" }}
-              >
-                <div className="n-title">{r.title}</div>
-                <div className="n-body">{r.body}</div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+    <button
+      className="icon-btn bell-btn"
+      onClick={() => navigate("/notifications")}
+      aria-label={
+        unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
+      }
+      title="Notifications"
+    >
+      <BellIcon cls="icon" />
+      {unread > 0 && <span className="bell-dot">{unread > 9 ? "9+" : unread}</span>}
+    </button>
   );
 }
 
@@ -168,12 +107,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       <div className="rail">
         <button
-          className={`rail-toggle ${open ? "open" : ""}`}
+          className={`icon-btn rail-toggle ${open ? "open" : ""}`}
           onClick={() => setOpen((o) => !o)}
           aria-label={open ? "Close navigation" : "Open navigation"}
           aria-expanded={open}
+          title={open ? "Close menu" : "Menu"}
         >
-          <ArrowLeftIcon cls="icon" style={{ transform: "rotate(180deg)" }} />
+          <PanelLeftIcon cls="icon" />
         </button>
         <button
           onClick={() => navigate("/courses")}

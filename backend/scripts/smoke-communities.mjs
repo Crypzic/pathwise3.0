@@ -198,9 +198,21 @@ if (CRON_SECRET) {
 const delReply = await req("DELETE", `/api/communities/replies/${replyId}`, { token: tokB });
 check("author removes own reply", delReply.status === 200);
 
-// Leave.
+// Leave → membership really gone (persisted), community untouched, rejoin works.
 const leave = await req("POST", `/api/communities/${programming.id}/leave`, { token: tokA });
 check("A leaves the community", leave.status === 200 && leave.data?.joined === false);
+const afterLeave = await req("GET", `/api/communities/${programming.id}`, { token: tokA });
+check(
+  "membership gone on re-fetch (persisted)",
+  afterLeave.status === 200 && afterLeave.data?.community?.joined === false,
+  JSON.stringify(afterLeave.data?.community).slice(0, 120)
+);
+check("leaving did NOT delete the community", afterLeave.data?.community?.id === programming.id);
+const rejoin = await req("POST", `/api/communities/${programming.id}/join`, { token: tokA });
+check("A rejoins cleanly", rejoin.status === 200 && rejoin.data?.joined === true);
+const afterRejoin = await req("GET", `/api/communities/${programming.id}`, { token: tokA });
+check("membership back on re-fetch", afterRejoin.data?.community?.joined === true);
+await req("POST", `/api/communities/${programming.id}/leave`, { token: tokA });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

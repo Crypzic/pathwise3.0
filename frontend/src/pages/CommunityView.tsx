@@ -157,6 +157,14 @@ export default function CommunityView() {
 
   async function toggleJoin() {
     if (!data || !id) return;
+    // Leaving is deliberate — confirm it. Membership only; the community
+    // itself is untouched either way.
+    if (
+      data.community.joined &&
+      !window.confirm(`Are you sure you want to leave ${data.community.name}?`)
+    ) {
+      return;
+    }
     setJoinBusy(true);
     try {
       await api.post(
@@ -212,8 +220,9 @@ export default function CommunityView() {
           className={community.joined ? "btn btn-ghost" : "btn btn-primary"}
           onClick={toggleJoin}
           disabled={joinBusy}
+          style={community.joined ? { color: "var(--danger)", borderColor: "var(--danger)" } : undefined}
         >
-          {community.joined ? "Joined ✓" : "Join"}
+          {joinBusy ? "…" : community.joined ? "Leave community" : "Join"}
         </button>
       </div>
 

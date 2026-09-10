@@ -83,6 +83,9 @@ export default function Profile() {
   const navigate = useNavigate();
   const { preference, setPreference } = useTheme();
   const { data, loading, error, reload } = useApi<ProfileResponse>("/api/profile");
+  const blockedState = useApi<{
+    blocked: { userId: string; name: string; since: string }[];
+  }>("/api/dms/blocked");
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -201,6 +204,18 @@ export default function Profile() {
       );
     } finally {
       setFrameBusy(false);
+    }
+  }
+
+  async function unblock(userId: string) {
+    setSaveError(null);
+    try {
+      await api.post("/api/dms/block", { userId, on: false });
+      blockedState.reload();
+    } catch (err) {
+      setSaveError(
+        err instanceof ApiError ? err.message : "Couldn't unblock just now."
+      );
     }
   }
 
@@ -651,6 +666,50 @@ export default function Profile() {
         <button className="btn btn-ghost btn-block" onClick={changePassword}>
           Update password
         </button>
+      </Collapsible>
+
+      <div style={{ height: 14 }} />
+
+      {/* Blocked users (safety spec) — blocks are managed here, not buried. */}
+      <Collapsible
+        title={`Blocked users${
+          (blockedState.data?.blocked.length ?? 0) > 0
+            ? ` (${blockedState.data!.blocked.length})`
+            : ""
+        }`}
+      >
+        {(blockedState.data?.blocked.length ?? 0) === 0 ? (
+          <p style={{ fontSize: 12.5, color: "var(--ink-soft)", margin: 0 }}>
+            You haven't blocked anyone. Blocking hides you from each other and
+            stops messages both ways.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {blockedState.data!.blocked.map((b) => (
+              <div
+                key={b.userId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "8px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ fontWeight: 650, fontSize: 13.5 }}>
+                  {b.name}
+                  <span style={{ fontSize: 11, color: "var(--ink-faint)", marginLeft: 8 }}>
+                    blocked {new Date(b.since).toLocaleDateString()}
+                  </span>
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={() => unblock(b.userId)}>
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Collapsible>
 
       <div style={{ height: 14 }} />
