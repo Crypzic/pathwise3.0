@@ -233,35 +233,64 @@ export default function Quiz() {
         <div className="eyebrow" style={{ marginBottom: 12 }}>
           Flashcards · {cardIndex + 1} of {cards.length} · {card.topicName}
         </div>
+        {/* Real 3D flip — both faces exist, .flipped rotates the inner. */}
         <button
-          className="card"
+          className="flip-scene"
           onClick={() => setFlipped((f) => !f)}
           aria-label={flipped ? "Show question" : "Reveal answer"}
           style={{
             width: "100%",
-            minHeight: 220,
-            padding: 24,
-            textAlign: "center",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
+            border: "none",
+            background: "none",
+            padding: 0,
             cursor: "pointer",
-            border: flipped ? "1px solid var(--accent)" : undefined,
+            textAlign: "center",
+            font: "inherit",
+            color: "inherit",
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", letterSpacing: 1 }}>
-            {flipped ? "ANSWER" : "QUESTION — tap to reveal"}
-          </div>
-          <div style={{ fontSize: 16, lineHeight: 1.5, fontWeight: flipped ? 700 : 500 }}>
-            {flipped ? card.back : card.front}
-          </div>
-          {flipped && card.explanation && (
-            <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.55 }}>
-              {card.explanation}
+          <div className={`flip-inner ${flipped ? "flipped" : ""}`}>
+            <div
+              className="card flip-face"
+              style={{
+                minHeight: 220,
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", letterSpacing: 1 }}>
+                QUESTION — tap to reveal
+              </div>
+              <div style={{ fontSize: 16, lineHeight: 1.5 }}>{card.front}</div>
             </div>
-          )}
+            <div
+              className="card flip-face flip-back"
+              style={{
+                minHeight: 220,
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                border: "1px solid var(--accent)",
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", letterSpacing: 1 }}>
+                ANSWER
+              </div>
+              <div style={{ fontSize: 16, lineHeight: 1.5, fontWeight: 700 }}>{card.back}</div>
+              {card.explanation && (
+                <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                  {card.explanation}
+                </div>
+              )}
+            </div>
+          </div>
         </button>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button

@@ -92,11 +92,31 @@ function runSmoke(script, extraEnv = {}) {
   });
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function stopServer(child) {
-  if (child.exitCode !== null) return;
-  child.kill();
-  await new Promise((r) => setTimeout(r, 1200));
-  if (child.exitCode === null) child.kill("SIGKILL");
+  if (child.exitCode === null) {
+    child.kill();
+    const deadline = Date.now() + 15_000;
+    while (child.exitCode === null && Date.now() < deadline) {
+      await sleep(300);
+    }
+    if (child.exitCode === null) child.kill("SIGKILL");
+  }
+  // Wait until the port ACTUALLY stops answering. On Windows under AV load
+  // a kill can lag; if the old server still holds the port when the next
+  // suite boots, the new server fails to bind and the suite silently runs
+  // against the stale one — with its poisoned rate limiter.
+  const portDeadline = Date.now() + 20_000;
+  while (Date.now() < portDeadline) {
+    try {
+      await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(1000) });
+      await sleep(500); // still answering — keep waiting
+    } catch {
+      return; // connection refused: the port is free
+    }
+  }
+  console.warn("  ⚠ port 4000 still answering after 20s — next suite may misfire");
 }
 
 async function runSuiteOnce(suite) {

@@ -2,7 +2,7 @@
 // Keeps the fixed dark theme so the mode reads as its own space regardless of
 // the app's light/dark setting.
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { SparklesIcon, ArrowLeftIcon, ShieldIcon } from "../components/icons";
@@ -16,7 +16,15 @@ interface CourseOption {
 export default function Socratic() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const location = useLocation();
   const { user, patchUser } = useAuth();
+
+  // Another surface can hand the tutor a starting point (e.g. VideoWatch's
+  // "Analyze with Socratic"). It becomes the session's contextNote, which
+  // shapes the tutor's opening question.
+  const initialQuery = (
+    location.state as { initialQuery?: string } | null
+  )?.initialQuery?.trim();
 
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [courseId, setCourseId] = useState(params.get("courseId") ?? "");
@@ -50,7 +58,13 @@ export default function Socratic() {
       }
       const res = await api.post<{ session: { id: string } }>(
         "/api/socratic/sessions",
-        { courseId, origin: "dashboard" }
+        {
+          courseId,
+          origin: "dashboard",
+          ...(initialQuery
+            ? { contextNote: initialQuery.slice(0, 1000) }
+            : {}),
+        }
       );
       navigate(`/socratic/chat/${res.session.id}`);
     } catch (err) {
@@ -152,6 +166,23 @@ export default function Socratic() {
               ))}
             </select>
           </div>
+        )}
+
+        {initialQuery && (
+          <p
+            style={{
+              color: "var(--soc-text-soft)",
+              fontSize: 12.5,
+              lineHeight: 1.5,
+              marginBottom: 14,
+              textAlign: "left",
+              borderLeft: "2px solid var(--soc-accent)",
+              paddingLeft: 10,
+            }}
+          >
+            Bringing with you: “{initialQuery.slice(0, 140)}
+            {initialQuery.length > 140 ? "…" : ""}”
+          </p>
         )}
 
         {error && (

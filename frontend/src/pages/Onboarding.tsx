@@ -148,7 +148,10 @@ function TagInput({
   );
 }
 
-const STEP_COUNT = 4;
+// Three steps: field/level, learning preferences, study-partner preferences.
+// Subjects and topics are no longer asked here — the knowledge map derives
+// them from what the student actually uploads.
+const STEP_COUNT = 3;
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -161,8 +164,6 @@ export default function Onboarding() {
   // Draft state, prefilled from the saved profile.
   const [field, setField] = useState("");
   const [level, setLevel] = useState<string | null>(null);
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
   const [contentPrefs, setContentPrefs] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
   const [style, setStyle] = useState<string | null>(null);
@@ -178,8 +179,6 @@ export default function Onboarding() {
         const p = res.profile;
         setField(p.field ?? "");
         setLevel(p.academicLevel);
-        setSubjects(p.subjects);
-        setTopics(p.topics);
         setContentPrefs(p.contentPrefs);
         setInterests(p.communityInterests);
         setStyle(p.studyStyle);
@@ -191,11 +190,11 @@ export default function Onboarding() {
   }, []);
 
   function payload() {
+    // Subjects/topics are deliberately absent: the server only updates what
+    // is sent, so anything saved before this step was removed is preserved.
     return {
       field,
       academicLevel: level ?? "",
-      subjects,
-      topics,
       contentPrefs,
       communityInterests: interests,
       studyStyle: style ?? "",
@@ -281,30 +280,6 @@ export default function Onboarding() {
                 />
               ))}
             </div>
-          </div>
-        </>
-      ),
-    },
-    {
-      title: "Your courses right now",
-      hint: "Subjects you're taking, and topics you want to get better at.",
-      body: (
-        <>
-          <div className="field">
-            <label>Subjects / courses</label>
-            <TagInput
-              values={subjects}
-              onChange={setSubjects}
-              placeholder="e.g. Contract Law"
-            />
-          </div>
-          <div className="field">
-            <label>Topics of interest</label>
-            <TagInput
-              values={topics}
-              onChange={setTopics}
-              placeholder="e.g. Offer and acceptance"
-            />
           </div>
         </>
       ),

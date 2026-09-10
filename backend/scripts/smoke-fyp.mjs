@@ -15,12 +15,13 @@ function check(name, ok, detail = "") {
   }
 }
 
-async function req(method, path, { token, body } = {}) {
+async function req(method, path, { token, body, headers } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(headers ?? {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -80,8 +81,33 @@ check("course has topics", topics.length > 0);
 const bridgeTopic = topics[0]?.name;
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
+
+/** Hide a catalog video via ops (used for self-cleanup). */
+async function hideVideo(id) {
+  await fetch(`${BASE}/api/ops/videos/${id}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-cron-secret": CRON_SECRET,
+    },
+    body: JSON.stringify({ status: "hidden" }),
+  }).catch(() => {});
+}
+
 let plantedId = null;
+const cleanupIds = [];
 if (CRON_SECRET) {
+  // Self-cleaning: hide bridge videos left behind by earlier runs so they
+  // can't flood the feed's top-20 and starve the taste-signal check.
+  const opsList = await req("GET", "/api/ops/videos", {
+    headers: { "x-cron-secret": CRON_SECRET },
+  });
+  for (const v of opsList.data?.videos ?? []) {
+    if (v.creator === "Smoke U" && v.status === "published") {
+      await hideVideo(v.id);
+    }
+  }
+
   const res = await fetch(`${BASE}/api/ops/videos`, {
     method: "POST",
     headers: {
@@ -99,6 +125,7 @@ if (CRON_SECRET) {
   });
   const data = await res.json();
   plantedId = data?.video?.id;
+  if (plantedId) cleanupIds.push(plantedId);
   check("planted a bridge video (201)", res.status === 201 && Boolean(plantedId));
 
   const feed = await req("GET", "/api/fyp", { token: tok });
@@ -146,6 +173,7 @@ if (CRON_SECRET) {
     }),
   });
   const planted2 = (await res2.json())?.video?.id;
+  if (planted2) cleanupIds.push(planted2);
   check("planted a second bridge video (201)", res2.status === 201 && Boolean(planted2));
 
   const after = await req("GET", "/api/fyp", { token: tok });
@@ -169,6 +197,9 @@ check(
   (tasteFeed.data?.feed ?? []).some((v) => /you('ve)? liked/i.test(v.reason ?? "")),
   JSON.stringify((tasteFeed.data?.feed ?? []).slice(0, 3).map((v) => v.reason))
 );
+
+// Leave the catalog the way we found it.
+for (const id of cleanupIds) await hideVideo(id);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

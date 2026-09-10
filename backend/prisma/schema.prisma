@@ -59,6 +59,10 @@ model User {
   // Fixed local time for the daily streak nudge, "HH:MM" in `timezone`.
   notifyHour        Int     @default(19)
 
+  // Profile picture (stored via the storage provider) + chosen avatar frame.
+  avatarPath        String?
+  avatarFrame       String  @default("classic")
+
   // Referrals (Step 14).
   referralCode   String?   @unique
   referredByCode String?

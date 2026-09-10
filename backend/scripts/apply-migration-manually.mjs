@@ -20,7 +20,29 @@ import { PrismaClient } from "@prisma/client";
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, "..", "prisma", "migrations");
 
-const prisma = new PrismaClient();
+// Target selection mirrors lib/prisma.ts: TURSO_* (or a libsql DATABASE_URL
+// with DATABASE_AUTH_TOKEN) routes through the libsql adapter — that's what
+// `npm run prisma:turso-deploy` relies on. Otherwise: the local file DB.
+const tursoUrl =
+  process.env.TURSO_DATABASE_URL ??
+  (process.env.DATABASE_AUTH_TOKEN &&
+  (process.env.DATABASE_URL ?? "").startsWith("libsql")
+    ? process.env.DATABASE_URL
+    : undefined);
+const tursoToken =
+  process.env.TURSO_AUTH_TOKEN ?? process.env.DATABASE_AUTH_TOKEN;
+
+let prisma;
+if (tursoUrl) {
+  const { PrismaLibSQL } = await import("@prisma/adapter-libsql");
+  prisma = new PrismaClient({
+    adapter: new PrismaLibSQL({ url: tursoUrl, authToken: tursoToken }),
+  });
+  console.log(`Target: Turso (${tursoUrl.split("@").pop()})`);
+} else {
+  prisma = new PrismaClient();
+  console.log(`Target: ${process.env.DATABASE_URL ?? "file:./dev.db"}`);
+}
 
 // Same table `migrate deploy` maintains — created here so a brand-new empty
 // database file works too.

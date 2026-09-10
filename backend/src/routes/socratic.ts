@@ -13,6 +13,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { socraticReply, AIBudgetExceededError } from "../lib/aiMeter.js";
+import { AIUnavailableError } from "../ai/resilience.js";
 import {
   detectAnswerLeak,
   detectExtractionAttempt,
@@ -23,7 +24,12 @@ import { recordSocraticDepth } from "../lib/mastery.js";
 import { isGuestUser } from "../lib/guests.js";
 import { getConceptContext } from "../lib/knowledgeLayer.js";
 import { stuckLevel } from "../lib/socraticAdaptModel.js";
-import { awardXp, grantBadge, XP } from "../lib/gamification.js";
+import {
+  awardXp,
+  grantBadge,
+  XP,
+  type AwardedBadge,
+} from "../lib/gamification.js";
 import { track } from "../lib/analytics.js";
 import type { ChatMessage, SocraticContext } from "../ai/types.js";
 import type { SocraticMessage } from "@prisma/client";
@@ -279,6 +285,9 @@ export default async function socraticRoutes(app: FastifyInstance) {
         if (err instanceof AIBudgetExceededError) {
           return reply.code(429).send({ error: err.message });
         }
+        if (err instanceof AIUnavailableError) {
+          return reply.code(503).send({ error: err.message });
+        }
         throw err;
       }
 
@@ -364,7 +373,9 @@ export default async function socraticRoutes(app: FastifyInstance) {
         });
       }
 
-      const newBadges = [];
+      // Explicitly typed: the relaxed production build (noImplicitAny off)
+      // infers a bare [] as never[].
+      const newBadges: AwardedBadge[] = [];
       if (meaningful) {
         const award = await awardXp(
           req.user.sub,

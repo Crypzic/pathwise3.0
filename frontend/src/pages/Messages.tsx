@@ -282,14 +282,8 @@ export default function Messages() {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: conversationId ? "minmax(180px, 260px) 1fr" : "1fr",
-          gap: 16,
-          alignItems: "start",
-        }}
-      >
+      {/* Stacks on phones — the open thread jumps above the list (.thread-pane). */}
+      <div className={conversationId ? "messages-grid" : undefined}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {loading ? (
             <SkeletonRows rows={4} height={56} />
@@ -342,7 +336,7 @@ export default function Messages() {
         </div>
 
         {conversationId && (
-          <div className="card" style={{ padding: 16 }}>
+          <div className="card thread-pane" style={{ padding: 16 }}>
             <Thread id={conversationId} onChanged={reload} />
           </div>
         )}

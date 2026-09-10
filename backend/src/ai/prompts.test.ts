@@ -7,10 +7,12 @@ import {
   clamp01,
   extractTopicsPrompt,
   validateBreakdown,
+  validateCommunityVerdict,
   validateGrade,
   validateTopics,
   validateQuestions,
   validateVerdict,
+  validateVideoQuery,
   validateWrittenQuestions,
   UNTRUSTED_INPUT_RULE,
   socraticSystemPrompt,
@@ -168,6 +170,20 @@ test("ask prompt allows explanation, socratic prompt still forbids it", () => {
   assert.ok(
     socraticSystemPrompt("Bio", "Cells").includes("NEVER give the final answer")
   );
+});
+
+test("community verdict fails open; video query falls back to the raw text", () => {
+  assert.equal(validateCommunityVerdict({ educational: false }).educational, false);
+  assert.equal(validateCommunityVerdict({ educational: true }).educational, true);
+  // Garbage from the model must not block creation (screening, not a wall).
+  assert.equal(validateCommunityVerdict({}).educational, true);
+
+  assert.equal(
+    validateVideoQuery({ query: "  organic chemistry electrolysis lecture " }, "x"),
+    "organic chemistry electrolysis lecture"
+  );
+  assert.equal(validateVideoQuery({}, "raw query"), "raw query");
+  assert.equal(validateVideoQuery({ query: "ab" }, "raw query"), "raw query");
 });
 
 test("prompts carry the untrusted-input rule and the anti-placeholder rule", () => {

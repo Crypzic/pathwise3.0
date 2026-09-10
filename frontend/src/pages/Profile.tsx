@@ -1,7 +1,7 @@
-// Profile (Step 10) — real editing, notification toggles, rank-gated frames,
+// Profile (Step 10) — real editing, profile picture + rank-gated frames,
 // theme choice (Step 16 item 5), referrals (Step 14) and account deletion with
-// a 30-day recovery window.
-import { useEffect, useState } from "react";
+// a 30-day recovery window. Notifications are automatic — no settings for them.
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
@@ -10,13 +10,14 @@ import { useFeatures } from "../lib/features";
 import { useApi } from "../lib/useApi";
 import { useTheme, type ThemePreference } from "../lib/theme";
 import { Collapsible } from "../components/Collapsible";
+import { Avatar } from "../components/Avatar";
 import {
   AwardIcon,
+  CameraIcon,
   GamepadIcon,
-  ShoppingBagIcon,
   LockIcon,
+  ShoppingBagIcon,
   SnowflakeIcon,
-  CheckIcon,
   SparklesIcon,
 } from "../components/icons";
 import {
@@ -33,13 +34,8 @@ interface ProfileResponse {
     username: string | null;
     email: string;
     timezone: string;
-  };
-  notifications: {
-    streak: boolean;
-    reviewDue: boolean;
-    unlocks: boolean;
-    email: boolean;
-    hour: number;
+    avatarUrl: string | null;
+    avatarFrame: string;
   };
   progress: {
     xp: number;
@@ -56,7 +52,14 @@ interface ProfileResponse {
     cancelAtPeriodEnd: boolean;
   };
   badges: { key: string; name: string; description: string }[];
-  frames: { key: string; name: string; requiredLevel: number; unlocked: boolean }[];
+  frames: {
+    key: string;
+    name: string;
+    description: string;
+    requiredLevel: number;
+    unlocked: boolean;
+    selected: boolean;
+  }[];
   ranks: { level: number; name: string; minXp: number; reached: boolean }[];
   referral: {
     code: string;
@@ -84,14 +87,10 @@ export default function Profile() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [notifications, setNotifications] = useState({
-    streak: true,
-    reviewDue: true,
-    unlocks: true,
-    email: true,
-    hour: 19,
-  });
   const [saving, setSaving] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [frameBusy, setFrameBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -132,7 +131,6 @@ export default function Profile() {
     setName(data.profile.name);
     setUsername(data.profile.username ?? "");
     setEmail(data.profile.email);
-    setNotifications(data.notifications);
   }, [data]);
 
   async function save() {
@@ -144,11 +142,6 @@ export default function Profile() {
         name: name.trim(),
         username: username.trim() || undefined,
         email: email.trim(),
-        notifyStreak: notifications.streak,
-        notifyReviewDue: notifications.reviewDue,
-        notifyUnlocks: notifications.unlocks,
-        notifyEmail: notifications.email,
-        notifyHour: notifications.hour,
       });
       setNotice("Saved.");
       await refresh();
@@ -157,6 +150,57 @@ export default function Profile() {
       setSaveError(err instanceof ApiError ? err.message : "Couldn't save.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadAvatar(file: File) {
+    setAvatarBusy(true);
+    setSaveError(null);
+    setNotice(null);
+    try {
+      await api.upload("/api/profile/avatar", file);
+      await refresh();
+      reload();
+      setNotice("Profile picture updated.");
+    } catch (err) {
+      setSaveError(
+        err instanceof ApiError ? err.message : "Couldn't upload that picture."
+      );
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarBusy(true);
+    setSaveError(null);
+    setNotice(null);
+    try {
+      await api.del("/api/profile/avatar");
+      await refresh();
+      reload();
+    } catch (err) {
+      setSaveError(
+        err instanceof ApiError ? err.message : "Couldn't remove the picture."
+      );
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function chooseFrame(key: string) {
+    setFrameBusy(true);
+    setSaveError(null);
+    try {
+      await api.post("/api/profile/frame", { frame: key });
+      await refresh();
+      reload();
+    } catch (err) {
+      setSaveError(
+        err instanceof ApiError ? err.message : "Couldn't switch frames."
+      );
+    } finally {
+      setFrameBusy(false);
     }
   }
 
@@ -248,6 +292,8 @@ export default function Profile() {
 
   const { progress, subscription, badges, frames, referral, companion } = data;
   const isPremium = subscription.tier === "premium";
+  // Username wins wherever we show who this is — the name is the fallback.
+  const shownName = data.profile.username || data.profile.name;
 
   return (
     <AppShell>
@@ -259,16 +305,41 @@ export default function Profile() {
       <InlineError message={saveError} />
       <InlineNotice message={notice} />
 
-      {/* Identity + rank */}
+      {/* Identity + rank — username above the rank pill, picture + frame live. */}
       <div
         className="card"
         style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}
       >
-        <div className="avatar" style={{ width: 60, height: 60, fontSize: 22 }}>
-          {data.profile.name.charAt(0).toUpperCase()}
-        </div>
+        <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+          <Avatar
+            name={shownName}
+            url={data.profile.avatarUrl}
+            frame={data.profile.avatarFrame}
+            size={64}
+          />
+          <button
+            className="avatar-upload"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={avatarBusy}
+            aria-label="Upload a profile picture"
+            title="Upload a profile picture"
+          >
+            <CameraIcon cls="icon-sm" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void uploadAvatar(file);
+              e.target.value = "";
+            }}
+          />
+        </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{data.profile.name}</div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{shownName}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
             <span className="pill pill-coral">
               <AwardIcon cls="icon-sm" /> {progress.rank.name} · Lv. {progress.rank.level}
@@ -296,8 +367,68 @@ export default function Profile() {
               {progress.xp.toLocaleString()} XP
               {progress.rank.nextXp !== null &&
                 ` · ${(progress.rank.nextXp - progress.xp).toLocaleString()} to next rank`}
+              {data.profile.avatarUrl && (
+                <>
+                  {" · "}
+                  <button
+                    onClick={removeAvatar}
+                    disabled={avatarBusy}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      font: "inherit",
+                      color: "var(--ink-faint)",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Remove photo
+                  </button>
+                </>
+              )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Frame picker — live previews rendered by the same Avatar component
+          the rest of the app uses, so what you pick is what you get. */}
+      <div className="card" style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 14.5, marginBottom: 6 }}>Profile frames</h2>
+        <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginBottom: 14 }}>
+          Pick how your avatar is framed across Pathwise. More unlock as you
+          level up.
+        </p>
+        <div className="frame-picker">
+          {frames.map((f) => (
+            <button
+              key={f.key}
+              className={`frame-option${f.unlocked ? "" : " locked"}`}
+              aria-pressed={f.selected}
+              disabled={!f.unlocked || frameBusy}
+              onClick={() => chooseFrame(f.key)}
+              title={f.description}
+            >
+              <Avatar
+                name={shownName}
+                url={data.profile.avatarUrl}
+                frame={f.key}
+                size={52}
+              />
+              <span className="fo-name">{f.name}</span>
+              {f.unlocked ? (
+                <span className="fo-req">{f.selected ? "In use" : "Tap to wear"}</span>
+              ) : (
+                <span
+                  className="fo-req"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
+                >
+                  <LockIcon cls="icon-sm" /> Level {f.requiredLevel}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -326,64 +457,6 @@ export default function Profile() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-        </div>
-      </div>
-
-      {/* Notifications (Step 12 preferences) */}
-      <div className="card" style={{ marginBottom: 22 }}>
-        <h2 style={{ fontSize: 14.5, marginBottom: 16 }}>Notifications</h2>
-        {(
-          [
-            ["streak", "Streak reminders", "A daily nudge if you haven't studied yet"],
-            ["reviewDue", "Review reminders", "When topics fall due for review"],
-            ["unlocks", "Ranks & badges", "When you unlock something new"],
-            ["email", "Also send by email", "Reminders reach you even when the app is closed"],
-          ] as const
-        ).map(([key, label, hint]) => (
-          <label
-            key={key}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "10px 0",
-              borderBottom: "1px solid var(--border)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={notifications[key]}
-              onChange={(e) =>
-                setNotifications((n) => ({ ...n, [key]: e.target.checked }))
-              }
-              style={{ width: 18, height: 18, accentColor: "var(--primary)" }}
-            />
-            <span style={{ flex: 1 }}>
-              <span style={{ display: "block", fontWeight: 700, fontSize: 13.5 }}>
-                {label}
-              </span>
-              <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{hint}</span>
-            </span>
-          </label>
-        ))}
-
-        <div className="field" style={{ marginTop: 16, marginBottom: 0, maxWidth: 220 }}>
-          <label htmlFor="p-hour">Daily reminder time</label>
-          <select
-            id="p-hour"
-            value={notifications.hour}
-            onChange={(e) =>
-              setNotifications((n) => ({ ...n, hour: Number(e.target.value) }))
-            }
-          >
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>
-                {String(h).padStart(2, "0")}:00
-              </option>
-            ))}
-          </select>
-          <span className="hint">In your local timezone ({data.profile.timezone}).</span>
         </div>
       </div>
 
@@ -460,28 +533,6 @@ export default function Profile() {
           </div>
         )}
       </div>
-
-      {/* Rank-gated frames (Step 10 item 2) */}
-      <Collapsible title={`Profile frames (${frames.filter((f) => f.unlocked).length}/${frames.length})`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {frames.map((f) => (
-            <div key={f.key} className="heat-list-row">
-              <div className="t-name">{f.name}</div>
-              {f.unlocked ? (
-                <span className="pill pill-mint">
-                  <CheckIcon cls="icon-sm" /> Unlocked
-                </span>
-              ) : (
-                <span className="pill pill-muted">
-                  <LockIcon cls="icon-sm" /> Level {f.requiredLevel}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </Collapsible>
-
-      <div style={{ height: 14 }} />
 
       {badges.length > 0 && (
         <>

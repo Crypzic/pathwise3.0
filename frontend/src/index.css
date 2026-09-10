@@ -135,6 +135,12 @@ button { font-family: inherit; }
 .nav-item.active .icon { stroke: var(--primary-dark); }
 
 .sidebar-streak { margin-top: auto; background: linear-gradient(135deg, var(--accent-light), #FFF8F3); border-radius: var(--r-lg); padding: 14px 16px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(242,114,74,0.12); }
+/* Dark mode: no washed-out cream gradient — plain surface card tokens with
+   high-contrast text; the flame keeps the accent. */
+:root[data-theme="dark"] .sidebar-streak {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
 
 .main { flex: 1; padding: 30px 42px 40px 42px; max-width: 1100px; }
 
@@ -407,10 +413,15 @@ button { font-family: inherit; }
 .rail-toggle.open { transform: rotate(90deg); }
 
 .sidebar-drawer {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 260px;
+  position: fixed; top: 0; left: 0; width: 260px;
+  /* Bounded to the DYNAMIC viewport so the drawer never hides behind mobile
+     browser chrome; dvh with a vh fallback for older browsers. */
+  height: 100vh; height: 100dvh;
   background: var(--surface); border-right: 1px solid var(--border);
   transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 100; padding: 20px 16px; display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto;
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
 }
 .sidebar-drawer.open { transform: translateX(0); }
 .sidebar-backdrop {
@@ -592,3 +603,108 @@ button { font-family: inherit; }
   background: var(--surface); color: var(--primary-dark);
   box-shadow: var(--shadow-sm);
 }
+
+/* Checkboxes must never inherit the full-width text-input styling — they sit
+   inline beside their label (fixes the "Studying with others" step). */
+.field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  accent-color: var(--primary);
+}
+
+/* ==== Profile pictures + avatar frames ==================================== */
+/* Ring = ::before layer; content (photo or initial) sits inset by --ring.   */
+.avatar-frame { position: relative; border-radius: 50%; --ring: 3px; flex-shrink: 0; display: inline-block; }
+.avatar-frame::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--primary); }
+.avatar-initial {
+  position: absolute; inset: var(--ring); border-radius: 50%;
+  background: linear-gradient(155deg, #FF9066, var(--accent) 60%, #D6552C);
+  color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.avatar-img { position: absolute; inset: var(--ring); width: calc(100% - var(--ring) * 2); height: calc(100% - var(--ring) * 2); border-radius: 50%; object-fit: cover; z-index: 1; }
+
+.frame-classic::before { background: var(--primary); }
+.frame-halo::before { background: var(--primary-glow, #34D399); box-shadow: 0 0 12px rgba(52, 211, 153, 0.55); }
+.frame-sprout::before { background: transparent; border: 2px dashed var(--primary); }
+.frame-sprout::after { content: ""; position: absolute; top: -3px; left: 50%; transform: translateX(-50%); width: 9px; height: 9px; border-radius: 50%; background: var(--primary-glow, #34D399); box-shadow: 0 0 0 2px var(--surface); z-index: 2; }
+.frame-bronze::before { background: linear-gradient(135deg, #7a4a1e, #d9a066 45%, #a5622a 75%, #7a4a1e); }
+.frame-laurel { --ring: 5px; }
+.frame-laurel::before { background: linear-gradient(135deg, #a97d1f, #f5d061 40%, #c99a2e 70%, #f0c94f); box-shadow: inset 0 0 0 2px var(--surface); }
+.frame-prismatic::before { background: conic-gradient(from 0deg, #ff5f6d, #ffc371, #9be15d, #00e3ae, #17ead9, #7f7fd5, #ff5f6d); animation: prismaticSpin 6s linear infinite; }
+@keyframes prismaticSpin { to { transform: rotate(360deg); } }
+
+/* Frame picker on the Profile page. */
+.frame-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; }
+.frame-option { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 6px 10px; border-radius: var(--r-md); border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; transition: border-color 0.18s ease, transform 0.18s ease; }
+.frame-option:hover { transform: translateY(-2px); }
+.frame-option[aria-pressed="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.frame-option .fo-name { font-size: 11.5px; font-weight: 700; }
+.frame-option .fo-req { font-size: 10.5px; color: var(--ink-faint); }
+.frame-option.locked { opacity: 0.55; cursor: not-allowed; }
+
+/* Avatar upload affordance (camera chip over the picture). */
+.avatar-upload { position: absolute; right: -4px; bottom: -4px; z-index: 3; width: 26px; height: 26px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--border); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.avatar-upload:hover { box-shadow: var(--shadow-md); }
+
+/* ==== Mobile fit pass ===================================================== */
+.messages-grid { display: grid; grid-template-columns: minmax(180px, 260px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 720px) {
+  .messages-grid { grid-template-columns: 1fr; }
+  .messages-grid .thread-pane { order: -1; }
+}
+@media (max-width: 640px) {
+  .page-title, .section-title { font-size: 19px; }
+  h1 { font-size: 19px; }
+  .card { padding: 14px; }
+  .auth-card { padding: 24px 18px; }
+  .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .page-head .btn { width: 100%; }
+  .dots-row { flex-wrap: wrap; row-gap: 6px; }
+  .notif-panel { width: min(92vw, 340px); right: -8px; }
+  .topbar { margin-bottom: 18px; }
+}
+@media (max-width: 520px) {
+  .profile-trigger .name { display: none; }
+  .profile-trigger { padding: 6px; }
+}
+@media (max-width: 420px) {
+  .rank-chip { display: none; }
+}
+/* Nothing may push the page sideways on a phone. */
+html, body { overflow-x: hidden; }
+
+/* ==== Motion & transitions (auto-disabled by prefers-reduced-motion) ===== */
+@keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.page-fade-in > .card,
+.page-fade-in > .quest-card,
+.page-fade-in > .topic-row { animation: riseIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.page-fade-in > *:nth-child(2) { animation-delay: 0.04s; }
+.page-fade-in > *:nth-child(3) { animation-delay: 0.08s; }
+.page-fade-in > *:nth-child(4) { animation-delay: 0.12s; }
+.page-fade-in > *:nth-child(5) { animation-delay: 0.16s; }
+.page-fade-in > *:nth-child(6) { animation-delay: 0.2s; }
+
+@media (hover: hover) {
+  .card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+  .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .nav-item { transition: background 0.18s ease, transform 0.18s ease; }
+  .nav-item:hover { transform: translateX(3px); }
+}
+.btn:active { transform: scale(0.97); }
+.quiz-option { transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
+.quiz-option:active { transform: scale(0.985); }
+.pill { transition: background 0.18s ease, color 0.18s ease; }
+.progress-fill { transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* 3D flashcard flip (Quiz review deck). */
+.flip-scene { perspective: 1100px; }
+.flip-inner { position: relative; width: 100%; transition: transform 0.55s cubic-bezier(0.4, 0.2, 0.2, 1); transform-style: preserve-3d; }
+.flip-inner.flipped { transform: rotateY(180deg); }
+.flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip-back { position: absolute; inset: 0; transform: rotateY(180deg); overflow-y: auto; }
+/* The generic card hover-lift would overwrite the faces' 3D transforms. */
+.flip-scene .flip-face:hover { transform: none; box-shadow: var(--shadow-sm); }
+.flip-scene .flip-back:hover { transform: rotateY(180deg); }

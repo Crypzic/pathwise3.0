@@ -51,9 +51,9 @@ export type EventName =
   | "session_start"
   | "notification_sent"
   // Communities (PATHWISE 2.0 Phase 9)
+  | "community_created"
   | "community_joined"
   | "community_post_created"
-  | "community_post_flagged_off_topic"
   | "community_reply_created"
   | "content_reported"
   // Study Buddy Matching (PATHWISE 2.0 Phase 10)
@@ -112,7 +112,7 @@ export async function funnel(sinceDays = 30): Promise<FunnelSummary> {
     _count: { _all: true },
   });
   const count = (n: EventName) =>
-    rows.find((r: (typeof rows)[number]) => r.name === n)?._count._all ?? 0;
+    rows.find((r) => r.name === n)?._count._all ?? 0;
 
   return {
     signups: count("signup"),

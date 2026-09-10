@@ -65,17 +65,6 @@ export interface ImageInput {
 }
 
 /**
- * The original PDF bytes, handed to a provider alongside the locally
- * extracted text so a multimodal-document-capable provider (Gemini) can
- * read diagrams/tables/charts natively instead of relying on text alone.
- * Optional — providers without document vision just ignore it.
- */
-export interface DocumentInput {
-  data: Buffer;
-  mimeType: string; // "application/pdf"
-}
-
-/**
  * Learning layer: the lecturer-style breakdown of one topic, generated from
  * the course's own material and cached on the Topic row.
  */
@@ -117,16 +106,10 @@ export interface MaterialVerdict {
 export interface AIProvider {
   readonly name: string;
 
-  /**
-   * Step 2: pull weighted topics out of raw course material text.
-   * `documentInput`, when given, is the original PDF bytes — a
-   * document-vision-capable provider (Gemini) can use it to read
-   * diagrams/tables/charts the text extraction alone would miss.
-   */
+  /** Step 2: pull weighted topics out of raw course material text. */
   extractTopics(
     courseName: string,
-    materialText: string,
-    documentInput?: DocumentInput
+    materialText: string
   ): Promise<AIResult<ExtractedTopic[]>>;
 
   /** Step 5: generate practice questions weighted toward emphasized topics. */
@@ -153,18 +136,6 @@ export interface AIProvider {
   classifyMaterial(
     courseName: string,
     materialText: string
-  ): Promise<AIResult<MaterialVerdict>>;
-
-  /**
-   * Screen a community post before it goes live — runs after the local
-   * regex spam screen, catches what regex can't (harassment, subtly
-   * off-topic/inappropriate content). Reuses the MaterialVerdict shape:
-   * "clean" | "off_topic" | "inappropriate".
-   */
-  evaluateCommunityPost(
-    communityName: string,
-    title: string,
-    body: string
   ): Promise<AIResult<MaterialVerdict>>;
 
   /**
@@ -205,6 +176,21 @@ export interface AIProvider {
     referenceAnswer: string,
     studentAnswer: string
   ): Promise<AIResult<WrittenGrade>>;
+
+  /**
+   * Community-creation guardrail: does this title/description describe a
+   * legitimate academic subject, school course, or educational topic?
+   */
+  classifyCommunityTopic(
+    name: string,
+    description: string
+  ): Promise<AIResult<{ educational: boolean; reason: string }>>;
+
+  /**
+   * Video search assistant: turn a learner's free-text query into a
+   * targeted educational search string (academic intent extraction).
+   */
+  refineVideoQuery(query: string): Promise<AIResult<string>>;
 
   /**
    * PATHWISE 2.0 Phase 5: turn a photo/screenshot of study material (notes,

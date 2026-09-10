@@ -4,7 +4,6 @@ import type {
   AIProvider,
   AIResult,
   ChatMessage,
-  DocumentInput,
   ExtractedTopic,
   ImageInput,
   MaterialVerdict,
@@ -62,10 +61,7 @@ export class MockAIProvider implements AIProvider {
 
   async extractTopics(
     courseName: string,
-    materialText: string,
-    // Mock has no document vision — accepted for interface compatibility,
-    // intentionally unused.
-    _documentInput?: DocumentInput
+    materialText: string
   ): Promise<AIResult<ExtractedTopic[]>> {
     const phrases = candidatePhrases(materialText);
     const base =
@@ -218,26 +214,6 @@ export class MockAIProvider implements AIProvider {
     return wrap({ verdict: "clean" as const, reason: "Looks like course material." });
   }
 
-  async evaluateCommunityPost(
-    communityName: string,
-    title: string,
-    body: string
-  ): Promise<AIResult<MaterialVerdict>> {
-    void communityName;
-    // Same keyword-screen spirit as classifyMaterial — enough to exercise
-    // the reject path in dev without pretending to be real moderation.
-    const lowered = `${title} ${body}`.toLowerCase();
-    const banned = ["explicit sexual", "kill yourself", "child abuse"];
-    const hit = banned.find((b) => lowered.includes(b));
-    if (hit) {
-      return wrap({
-        verdict: "inappropriate" as const,
-        reason: `Matched a blocked phrase (${hit}).`,
-      });
-    }
-    return wrap({ verdict: "clean" as const, reason: "Looks fine for the community." });
-  }
-
   async explainTopic(
     courseName: string,
     topicName: string,
@@ -309,6 +285,29 @@ export class MockAIProvider implements AIProvider {
         };
       })
     );
+  }
+
+  async classifyCommunityTopic(
+    name: string,
+    description: string
+  ): Promise<AIResult<{ educational: boolean; reason: string }>> {
+    // Deterministic screen so the guardrail is testable free: obvious
+    // non-educational themes are refused, everything else passes.
+    const text = `${name} ${description}`.toLowerCase();
+    const nonEducational =
+      /\b(meme|memes|gambling|casino|betting|crypto pump|dating|hookup|nsfw|fan club|gossip|giveaway)\b/.test(
+        text
+      );
+    return wrap({
+      educational: !nonEducational,
+      reason: nonEducational
+        ? "Reads as a non-educational community."
+        : "Reads as a course/subject community.",
+    });
+  }
+
+  async refineVideoQuery(query: string): Promise<AIResult<string>> {
+    return wrap(`${query.trim()} explained tutorial`.trim());
   }
 
   async gradeWrittenAnswer(

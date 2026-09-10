@@ -14,6 +14,12 @@ import { isGuestUser } from "../lib/guests.js";
 import { rankedVideosFor } from "../lib/videos.js";
 import { buildFeed } from "../lib/fyp.js";
 import { validateVideoInput } from "../lib/videoModel.js";
+import {
+  searchYouTube,
+  suggestionQueries,
+  youtubeConfigured,
+} from "../lib/youtube.js";
+import { AIBudgetExceededError, refineVideoQuery } from "../lib/aiMeter.js";
 import { parseStoredList } from "../lib/onboardingModel.js";
 import { track } from "../lib/analytics.js";
 
@@ -55,6 +61,104 @@ export default async function videoRoutes(app: FastifyInstance) {
           action: f.action,
         })),
       });
+    }
+  );
+
+  // Search (2.0 frontend spec §3): free text → AI academic-intent
+  // refinement → YouTube Data API. The key never reaches the client.
+  app.get(
+    "/api/videos/search",
+    {
+      preHandler: [app.authenticate],
+      config: { rateLimit: { max: 20, timeWindow: "10 minutes" } },
+    },
+    async (req, reply) => {
+      const { q } = req.query as { q?: string };
+      const query = (q ?? "").trim().slice(0, 200);
+      if (query.length < 2) {
+        return reply.code(400).send({ error: "Type at least 2 characters." });
+      }
+      if (!youtubeConfigured()) {
+        return reply.send({
+          query,
+          refinedQuery: query,
+          results: [],
+          youtubeConfigured: false,
+        });
+      }
+
+      let refined = query;
+      try {
+        refined = await refineVideoQuery(req.user.sub, query);
+      } catch (err) {
+        if (err instanceof AIBudgetExceededError) {
+          return reply.code(429).send({ error: err.message });
+        }
+        // Refinement is an enhancer — search the raw query on any failure.
+      }
+      const results = await searchYouTube(refined, 12);
+      return reply.send({
+        query,
+        refinedQuery: refined,
+        results,
+        youtubeConfigured: true,
+      });
+    }
+  );
+
+  // Interest-mapped YouTube suggestions (2.0 frontend spec §3): queries come
+  // from the learner's own subjects/field and weakest course topics — never
+  // generic. Deterministic queries (no AI spend); empty when no key is set.
+  app.get(
+    "/api/videos/suggestions",
+    {
+      preHandler: [app.authenticate],
+      config: { rateLimit: { max: 20, timeWindow: "10 minutes" } },
+    },
+    async (req, reply) => {
+      if (!youtubeConfigured()) {
+        return reply.send({ suggestions: [], youtubeConfigured: false });
+      }
+      const [profile, topics] = await Promise.all([
+        prisma.learnerProfile.findUnique({ where: { userId: req.user.sub } }),
+        prisma.topic.findMany({
+          where: { knowledgeMap: { course: { userId: req.user.sub } } },
+          select: {
+            name: true,
+            masteries: {
+              where: { userId: req.user.sub },
+              select: { mastery: true },
+            },
+          },
+          take: 100,
+        }),
+      ]);
+      const rows = topics.map((t) => ({
+        name: t.name,
+        mastery: t.masteries[0]?.mastery ?? 0,
+      }));
+      const queries = suggestionQueries({
+        field: profile?.field ?? null,
+        subjects: parseStoredList(profile?.subjectsJson ?? "[]"),
+        topicsOfInterest: parseStoredList(profile?.topicsJson ?? "[]"),
+        weakTopics: rows.filter((t) => t.mastery < 0.4).map((t) => t.name),
+        courseTopics: rows.map((t) => t.name),
+      });
+
+      const suggestions: {
+        reason: string;
+        videos: Awaited<ReturnType<typeof searchYouTube>>;
+      }[] = [];
+      const seen = new Set<string>();
+      for (const q of queries.slice(0, 3)) {
+        const found = await searchYouTube(q, 4);
+        const fresh = found.filter((v) => !seen.has(v.videoId));
+        fresh.forEach((v) => seen.add(v.videoId));
+        if (fresh.length > 0) {
+          suggestions.push({ reason: q, videos: fresh });
+        }
+      }
+      return reply.send({ suggestions, youtubeConfigured: true });
     }
   );
 

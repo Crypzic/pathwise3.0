@@ -5,10 +5,8 @@
 // more materials later reinforces existing topics and adds new ones — the map
 // "expands" rather than being rebuilt from scratch.
 import { prisma } from "./prisma.js";
-import { extractText, imageKindFor, kindFor, IMAGE_MIME } from "./parse.js";
+import { extractText, imageKindFor, IMAGE_MIME } from "./parse.js";
 import { storage } from "./storage.js";
-import { env } from "./env.js";
-import type { DocumentInput } from "../ai/types.js";
 import {
   AIBudgetExceededError,
   extractTopics,
@@ -104,20 +102,9 @@ export async function processUpload(
   // transcription (2.0 Phase 5) and re-enter the pipeline as text — from
   // here on, nothing downstream knows the material arrived as pixels.
   let text: string;
-  // Set below only for a real PDF under the inline size cap — passed to
-  // extractTopics so Gemini can read the document natively (diagrams,
-  // tables, charts) alongside the extracted text.
-  let documentInput: DocumentInput | undefined;
   try {
     const buffer = await storage.read(upload.storagePath);
     const imageKind = imageKindFor(upload.filename, upload.mimeType);
-    if (
-      !imageKind &&
-      kindFor(upload.filename, upload.mimeType) === "pdf" &&
-      buffer.byteLength <= env.MAX_INLINE_PDF_MB * 1024 * 1024
-    ) {
-      documentInput = { data: buffer, mimeType: "application/pdf" };
-    }
     if (imageKind) {
       text = await transcribeImage(userId, upload.course.name, {
         data: buffer,
@@ -184,12 +171,7 @@ export async function processUpload(
   // --- Extract topics ----------------------------------------------------
   let extracted;
   try {
-    extracted = await extractTopics(
-      userId,
-      upload.course.name,
-      text,
-      documentInput
-    );
+    extracted = await extractTopics(userId, upload.course.name, text);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Topic extraction failed";

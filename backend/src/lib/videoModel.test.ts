@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_VIDEOS,
   rankVideos,
+  suggestionQueries,
   validateVideoInput,
   type VideoRecord,
 } from "./videoModel.js";
@@ -60,6 +61,34 @@ test("validateVideoInput enforces the required fields", () => {
   assert.match(
     validateVideoInput({ title: "abc", creator: "xy", subject: "Physics", url: "notaurl" }) ?? "",
     /url/
+  );
+});
+
+test("suggestion queries are interest-mapped, weak spots first, never empty-generic", () => {
+  const queries = suggestionQueries({
+    field: "Biology",
+    subjects: ["Cell Biology"],
+    topicsOfInterest: ["Immunology"],
+    weakTopics: ["Photosynthesis"],
+    courseTopics: ["Photosynthesis", "Mitosis"],
+  });
+  assert.equal(queries[0], "Photosynthesis explained"); // gap leads
+  assert.ok(queries.includes("Mitosis lecture"));
+  assert.ok(queries.length <= 5);
+  // Every query traces back to a learner signal — nothing generic.
+  for (const q of queries) {
+    assert.match(q, /Photosynthesis|Mitosis|Cell Biology|Immunology|Biology/);
+  }
+  // No signals at all → no queries (the UI then shows only the catalog).
+  assert.deepEqual(
+    suggestionQueries({
+      field: null,
+      subjects: [],
+      topicsOfInterest: [],
+      weakTopics: [],
+      courseTopics: [],
+    }),
+    []
   );
 });
 

@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { useFeatures } from "../lib/features";
 import { api } from "../lib/api";
 import { LogoFull } from "./Logo";
+import { Avatar } from "./Avatar";
 import {
   HomeIcon,
   PuzzleIcon,
@@ -16,6 +17,7 @@ import {
   ChevronDownIcon,
   GamepadIcon,
   ArrowLeftIcon,
+  BellIcon,
   MailIcon,
   UsersIcon,
   UploadIcon,
@@ -101,7 +103,7 @@ function NotificationBell() {
         }
         aria-expanded={open}
       >
-        <MailIcon cls="icon" />
+        <BellIcon cls="icon" />
         {unread > 0 && <span className="bell-dot">{unread > 9 ? "9+" : unread}</span>}
       </button>
 
@@ -141,7 +143,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const initial = user?.name?.charAt(0).toUpperCase() ?? "?";
+  // Username wins wherever we show who this is — the name is the fallback.
+  const shownName = user?.username || user?.name || "?";
 
   // The drawer's study-plan link needs a course. Remembering the last-viewed
   // one keeps the nav item useful instead of pointing at a hardcoded id.
@@ -205,10 +208,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
             onClick={() => navigate("/profile")}
             title="Profile"
           >
-            <div className="avatar" aria-hidden="true">
-              {initial}
-            </div>
-            <span className="name">{user?.name}</span>
+            <Avatar
+              name={shownName}
+              url={user?.avatarUrl}
+              frame={user?.avatarFrame}
+              size={36}
+            />
+            <span className="name">{shownName}</span>
             <ChevronDownIcon cls="icon-sm chev" />
           </button>
         </div>

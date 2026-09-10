@@ -60,6 +60,38 @@ export function rankVideos(
     .sort((a, b) => b.score - a.score);
 }
 
+/**
+ * Interest-mapped YouTube suggestion queries — derived from the learner's
+ * own signals (field, subjects, interests, weakest course topics), never
+ * generic (2.0 frontend spec §3). Weak spots lead: the feed's job is
+ * closing gaps, not filling time.
+ */
+export function suggestionQueries(signals: {
+  field: string | null;
+  subjects: string[];
+  topicsOfInterest: string[];
+  weakTopics: string[];
+  courseTopics: string[];
+}): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (q: string) => {
+    const cleaned = q.replace(/\s+/g, " ").trim();
+    const fold = cleaned.toLowerCase();
+    if (cleaned.length < 3 || seen.has(fold)) return;
+    seen.add(fold);
+    out.push(cleaned);
+  };
+
+  for (const t of signals.weakTopics.slice(0, 3)) push(`${t} explained`);
+  for (const t of signals.courseTopics.slice(0, 3)) push(`${t} lecture`);
+  for (const s of signals.subjects.slice(0, 2)) push(`${s} course`);
+  for (const t of signals.topicsOfInterest.slice(0, 2)) push(`${t} tutorial`);
+  if (signals.field) push(`${signals.field} exam prep`);
+
+  return out.slice(0, 5);
+}
+
 /** Validate an ops-submitted video. Returns the error, or null when fine. */
 export function validateVideoInput(v: {
   title?: unknown;

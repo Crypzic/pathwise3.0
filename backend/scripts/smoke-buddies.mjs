@@ -51,11 +51,14 @@ const tokC = await makeUser("Buddy C", `bud-c-${stamp}@test.local`);
 check("three accounts created", Boolean(tokA) && Boolean(tokB) && Boolean(tokC));
 
 // A and B share subjects+topics via their learner profiles; C is unrelated.
+// Topic/subject strings are stamped per run: matching is name-based, so
+// identical "Buddy B" twins left in dev.db by earlier runs would otherwise
+// tie with (and crowd out) this run's B in the top-10.
 const bioProfile = {
   field: "Biology",
   academicLevel: "undergraduate",
-  subjects: ["Cell Biology", "Genetics"],
-  topics: ["Mitosis", "DNA Replication"],
+  subjects: [`Cell Biology ${stamp}`, `Genetics ${stamp}`],
+  topics: [`Mitosis ${stamp}`, `DNA Replication ${stamp}`],
   studyStyle: "buddy",
   buddyPrefs: { similarLevel: true, availability: "evenings" },
 };
@@ -177,6 +180,11 @@ const guest = await req("POST", "/api/auth/guest", {});
 const tokG = guest.data?.token;
 const guestMatches = await req("GET", "/api/buddies/matches", { token: tokG });
 check("guest blocked (403)", guestMatches.status === 403, `got ${guestMatches.status}`);
+
+// Leave the matching pool the way we found it: this run's accounts go
+// hidden again so they can't crowd future runs' top-10.
+await req("POST", "/api/buddies/discoverable", { token: tokA, body: { on: false } });
+await req("POST", "/api/buddies/discoverable", { token: tokB, body: { on: false } });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

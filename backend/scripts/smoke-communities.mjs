@@ -55,23 +55,70 @@ const guest = await req("POST", "/api/auth/guest", {});
 const tokG = guest.data?.token;
 check("guest created", Boolean(tokG));
 
-// Browse: seeded subject tree present.
-const list = await req("GET", "/api/communities", { token: tokA });
-const communities = list.data?.communities ?? [];
-check("communities seeded (>= 10 incl. children)", communities.length >= 10, `got ${communities.length}`);
-const programming = communities.find((c) => c.slug === "programming");
-const cs = communities.find((c) => c.slug === "computer-science");
-check("roadmap tree exists (computer-science > programming)", Boolean(programming) && Boolean(cs) && programming.parentId === cs.id);
+// No hardcoded catalog (2.0 frontend spec): communities are user-created
+// behind the educational guardrail, and surfaced by interest match.
+
+// A non-educational community is refused with the EXACT product copy.
+const badCreate = await req("POST", "/api/communities", {
+  token: tokA,
+  body: { name: `Meme central ${stamp}`, description: "just memes all day" },
+});
+check("non-educational community rejected (400)", badCreate.status === 400, `got ${badCreate.status}`);
+check(
+  "rejection uses the exact product copy",
+  badCreate.data?.error === "Please create a community that aligns with any course or subject.",
+  badCreate.data?.error ?? ""
+);
+
+// An educational one is created; the founder is its first member.
+const communityName = `Programming ${stamp}`;
+const create = await req("POST", "/api/communities", {
+  token: tokA,
+  body: {
+    name: communityName,
+    description: "Languages, projects, and practice problems for CS students.",
+  },
+});
+const programming = create.data?.community;
+check("educational community created (201)", create.status === 201 && Boolean(programming?.id));
+
+const dup = await req("POST", "/api/communities", {
+  token: tokA,
+  body: { name: communityName, description: "duplicate" },
+});
+check("duplicate name refused (409)", dup.status === 409, `got ${dup.status}`);
+
+// Interest matching: A created it (joined → relevant); B has no overlap
+// until their profile mentions it, but search always finds it.
+const listA = await req("GET", "/api/communities", { token: tokA });
+const rowA = (listA.data?.communities ?? []).find((c) => c.id === programming.id);
+check("creator sees it as relevant + joined", rowA?.relevant === true && rowA?.joined === true);
+
+const searchB = await req(
+  "GET",
+  `/api/communities?q=${encodeURIComponent(`Programming ${stamp}`)}`,
+  { token: tokB }
+);
+check(
+  "search finds it for anyone",
+  (searchB.data?.communities ?? []).some((c) => c.id === programming.id)
+);
+
+await req("PUT", "/api/onboarding", { token: tokB, body: { field: "Programming" } });
+const listB = await req("GET", "/api/communities", { token: tokB });
+const rowB = (listB.data?.communities ?? []).find((c) => c.id === programming.id);
+check("subject match makes it relevant for B", rowB?.relevant === true, JSON.stringify(rowB));
 
 // Guests are locked out server-side.
 const guestList = await req("GET", "/api/communities", { token: tokG });
 check("guest blocked from communities (403)", guestList.status === 403, `got ${guestList.status}`);
 const guestJoin = await req("POST", `/api/communities/${programming.id}/join`, { token: tokG });
 check("guest blocked from joining (403)", guestJoin.status === 403);
-
-// Join + post.
-const join = await req("POST", `/api/communities/${programming.id}/join`, { token: tokA });
-check("A joins programming", join.status === 200 && join.data?.joined === true);
+const guestCreate = await req("POST", "/api/communities", {
+  token: tokG,
+  body: { name: "Guest Study Corner", description: "math help" },
+});
+check("guest blocked from creating (403)", guestCreate.status === 403);
 
 const noMemberPost = await req("POST", `/api/communities/${programming.id}/posts`, {
   token: tokB,

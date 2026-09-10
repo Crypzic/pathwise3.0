@@ -1,12 +1,9 @@
-// PATHWISE 2.0 Phase 9: community rules — slugs, spam screening, seed shape.
+// PATHWISE 2.0 Phase 9: community rules — slugs and spam screening.
+// (No seeded catalog anymore: communities are user-created behind the
+// educational guardrail.)
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  countLinks,
-  DEFAULT_COMMUNITIES,
-  screenText,
-  slugify,
-} from "./communityModel.js";
+import { countLinks, screenText, slugify } from "./communityModel.js";
 
 test("slugify produces url-safe, stable slugs", () => {
   assert.equal(slugify("Computer Science"), "computer-science");
@@ -48,20 +45,3 @@ test("screenText blocks obvious junk", () => {
   );
 });
 
-test("default communities have unique slugs matching slugify", () => {
-  const slugs = new Set<string>();
-  function walk(seeds: typeof DEFAULT_COMMUNITIES) {
-    for (const s of seeds) {
-      assert.ok(!slugs.has(s.slug), `duplicate slug ${s.slug}`);
-      slugs.add(s.slug);
-      assert.ok(s.slug.length > 0);
-      assert.ok(s.description.length > 0);
-      walk(s.children ?? []);
-    }
-  }
-  walk(DEFAULT_COMMUNITIES);
-  // The roadmap's example tree is present.
-  for (const expected of ["computer-science", "programming", "ai", "cybersecurity", "biology", "cell-biology", "genetics", "business", "law", "economics"]) {
-    assert.ok(slugs.has(expected), `missing ${expected}`);
-  }
-});

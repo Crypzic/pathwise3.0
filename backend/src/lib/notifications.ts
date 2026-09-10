@@ -6,14 +6,12 @@
 //   2. Review due        — when the spaced-repetition scheduler has work
 //   3. Rank/badge unlock — immediately on unlock
 //
-// Delivery is in-app (the NotificationLog table, polled by the client) plus —
-// for the daily streak/review reminders — email, when the user's notifyEmail
-// pref allows. Email is the channel that can actually bring someone back:
-// an in-app notification is only seen once they've already opened the app.
-// Unlocks stay in-app only; an email per badge would be spam.
+// Delivery is in-app only (the NotificationLog table, polled by the
+// client) — notifications are automatic, with no per-user settings
+// surface. Email is reserved for registration (the welcome message in
+// routes/auth.ts) and password resets; reminder emails are deliberately
+// not sent.
 import { prisma } from "./prisma.js";
-import { env } from "./env.js";
-import { email } from "../email/index.js";
 import { localDayKey } from "./gamification.js";
 import { isDue } from "./mastery.js";
 import { track } from "./analytics.js";
@@ -99,31 +97,7 @@ function localHour(timezone: string, at: Date = new Date()): number {
 export interface SweepResult {
   streakReminders: number;
   reviewReminders: number;
-  emailsSent: number;
   usersChecked: number;
-}
-
-/**
- * Best-effort email copy of a delivered notification. Failure is logged and
- * swallowed — one bounced address must never abort the whole sweep.
- */
-async function emailCopy(
-  to: string,
-  notification: Notification
-): Promise<boolean> {
-  try {
-    await email.sendNotification({
-      to,
-      subject: notification.title,
-      body: notification.body,
-      actionUrl: `${env.APP_URL}${notification.deepLink ?? "/courses"}`,
-      actionLabel: "Open Pathwise",
-    });
-    return true;
-  } catch (err) {
-    console.error(`⚠️  Failed to email notification to ${to}:`, err);
-    return false;
-  }
 }
 
 /**
@@ -151,7 +125,6 @@ export async function runNotificationSweep(now = new Date()): Promise<SweepResul
 
   let streakReminders = 0;
   let reviewReminders = 0;
-  let emailsSent = 0;
 
   for (const user of users) {
     const hour = localHour(user.timezone, now);
@@ -173,13 +146,7 @@ export async function runNotificationSweep(now = new Date()): Promise<SweepResul
         deepLink: "/courses",
       };
       const sent = await deliver(user.id, notification, dayKey);
-      if (sent) {
-        streakReminders += 1;
-        // The dedupe key already fired, so the email goes at most once/day too.
-        if (user.notifyEmail && (await emailCopy(user.email, notification))) {
-          emailsSent += 1;
-        }
-      }
+      if (sent) streakReminders += 1;
     }
 
     // 2. Review-due reminder, straight from the scheduler.
@@ -202,17 +169,12 @@ export async function runNotificationSweep(now = new Date()): Promise<SweepResul
           deepLink: `/study-plan/${courseId}`,
         };
         const sent = await deliver(user.id, notification, dayKey);
-        if (sent) {
-          reviewReminders += 1;
-          if (user.notifyEmail && (await emailCopy(user.email, notification))) {
-            emailsSent += 1;
-          }
-        }
+        if (sent) reviewReminders += 1;
       }
     }
   }
 
-  return { streakReminders, reviewReminders, emailsSent, usersChecked: users.length };
+  return { streakReminders, reviewReminders, usersChecked: users.length };
 }
 
 /**

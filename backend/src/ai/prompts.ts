@@ -285,35 +285,6 @@ export function validateVerdict(parsed: Partial<MaterialVerdict>): MaterialVerdi
   return { verdict, reason: String(parsed.reason ?? "") };
 }
 
-/**
- * Community posts already pass a local regex screen (link spam, shouting,
- * repeated characters) before this runs — this catches what regex can't:
- * harassment, off-topic content that isn't obviously spammy, subtly
- * inappropriate content. Reuses the MaterialVerdict shape/validator since
- * the decision (clean / off_topic / inappropriate) is structurally the
- * same call, just against a short post instead of a document.
- */
-export function evaluateCommunityPostPrompt(
-  communityName: string,
-  title: string,
-  body: string
-): { system: string; user: string } {
-  const system =
-    "You screen posts in a student study-app community before they go " +
-    "live. Decide whether the post is appropriate discussion for a study " +
-    'community. Respond as JSON: {"verdict": "clean" | "off_topic" | ' +
-    '"inappropriate", "reason": string}. Use "off_topic" only for content ' +
-    "with no reasonable connection to studying, courses, or student life " +
-    '(e.g. unrelated advertising, personal disputes). Use "inappropriate" ' +
-    "for harassment, hate speech, sexual content, or content targeting a " +
-    "specific person. Casual tone, jokes, and off-hand remarks within a " +
-    "study community are normal and should stay \"clean\" — this is a " +
-    "screen for real harm, not a tone check. " +
-    UNTRUSTED_INPUT_RULE;
-  const user = `Community: ${communityName}\n\nTitle: ${title}\n\nBody:\n${body.slice(0, 3000)}`;
-  return { system, user };
-}
-
 // --- Learning layer: topic breakdowns, Ask PATHWISE, written grading -------
 
 export function explainTopicPrompt(
@@ -473,6 +444,54 @@ export function gradeWrittenPrompt(
     `Question: ${question}\n\nReference answer: ${referenceAnswer}\n\n` +
     `Student's answer: ${studentAnswer.slice(0, 2000)}`;
   return { system, user };
+}
+
+export function communityTopicPrompt(
+  name: string,
+  description: string
+): { system: string; user: string } {
+  const system =
+    "You screen new community proposals for a student study app. Decide " +
+    "whether the community is centered on a legitimate academic subject, a " +
+    "school/university course, an exam, or an educational learning topic " +
+    "(study-skills communities count). General social/entertainment/" +
+    "commercial communities do not. " +
+    'Respond as JSON: {"educational": boolean, "reason": string}. ' +
+    UNTRUSTED_INPUT_RULE;
+  const user = `Proposed community\nName: ${name}\nDescription: ${description || "(none)"}`;
+  return { system, user };
+}
+
+/** Unreadable verdicts fail OPEN (educational) — screening, not a wall. */
+export function validateCommunityVerdict(parsed: {
+  educational?: unknown;
+  reason?: unknown;
+}): { educational: boolean; reason: string } {
+  return {
+    educational: parsed.educational !== false,
+    reason: String(parsed.reason ?? "").slice(0, 300),
+  };
+}
+
+export function videoQueryPrompt(query: string): { system: string; user: string } {
+  const system =
+    "You turn a student's free-text request into ONE targeted YouTube search " +
+    "string for educational content. Extract the academic intent (subject, " +
+    "topic, level, exam board if named) and produce a concise search query " +
+    "that favors lectures, explainers and exam prep over entertainment. " +
+    'Respond as JSON: {"query": string}. ' +
+    UNTRUSTED_INPUT_RULE;
+  const user = `Student request: ${query.slice(0, 300)}`;
+  return { system, user };
+}
+
+/** A useless refinement falls back to the raw query. */
+export function validateVideoQuery(
+  parsed: { query?: unknown },
+  fallback: string
+): string {
+  const q = String(parsed.query ?? "").trim().slice(0, 200);
+  return q.length >= 3 ? q : fallback;
 }
 
 /** Grading fails kind: an unreadable model reply becomes "close" + honesty. */

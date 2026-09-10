@@ -4,7 +4,7 @@
 // learning loop wherever a video maps onto the learner's own topics.
 // Subject chips browse the raw curated catalog. Links open at the source
 // with full attribution.
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
@@ -12,6 +12,61 @@ import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { PuzzleIcon, SparklesIcon } from "../components/icons";
 import { EmptyState, ErrorState, InlineError, SkeletonRows } from "../components/states";
+
+interface YouTubeRow {
+  videoId: string;
+  title: string;
+  channel: string;
+  thumbnailUrl: string | null;
+  url: string;
+}
+
+/** A YouTube result card — always opens at the source. */
+function YouTubeCard({ v }: { v: YouTubeRow }) {
+  return (
+    <a
+      href={v.url}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="card"
+      style={{
+        padding: 10,
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        color: "var(--ink)",
+        textDecoration: "none",
+      }}
+    >
+      {v.thumbnailUrl ? (
+        <img
+          src={v.thumbnailUrl}
+          alt=""
+          style={{ width: 120, borderRadius: 8, flexShrink: 0 }}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          style={{
+            width: 120,
+            height: 68,
+            borderRadius: 8,
+            background: "var(--surface-alt)",
+            flexShrink: 0,
+          }}
+        />
+      )}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 650, fontSize: 13.5, lineHeight: 1.35 }}>
+          {v.title}
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4 }}>
+          {v.channel} · YouTube
+        </div>
+      </div>
+    </a>
+  );
+}
 
 interface VideoRow {
   id: string;
@@ -49,6 +104,43 @@ export default function Videos() {
     [subject]
   );
   const fyp = useApi<{ feed: VideoRow[] }>("/api/fyp");
+  // Interest-mapped YouTube strips (2.0 spec §3) — empty without a key.
+  const suggestions = useApi<{
+    suggestions: { reason: string; videos: YouTubeRow[] }[];
+    youtubeConfigured: boolean;
+  }>("/api/videos/suggestions");
+
+  // Search: free text → AI intent → YouTube, via our backend only.
+  const [searchDraft, setSearchDraft] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<{
+    query: string;
+    refinedQuery: string;
+    results: YouTubeRow[];
+    youtubeConfigured: boolean;
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  async function runSearch(e: FormEvent) {
+    e.preventDefault();
+    const q = searchDraft.trim();
+    if (q.length < 2 || searching) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await api.get<{
+        query: string;
+        refinedQuery: string;
+        results: YouTubeRow[];
+        youtubeConfigured: boolean;
+      }>(`/api/videos/search?q=${encodeURIComponent(q)}`);
+      setSearchResult(res);
+    } catch (err) {
+      setSearchError(err instanceof ApiError ? err.message : "Search failed.");
+    } finally {
+      setSearching(false);
+    }
+  }
 
   const showingFeed = subject === null;
   const { loading, error, reload } = showingFeed ? fyp : shelf;
@@ -109,11 +201,80 @@ export default function Videos() {
         <div>
           <h1 className="page-title">Videos</h1>
           <p className="page-sub">
-            Hand-picked explanations matched to your courses. Links open at
-            the source — full credit to the creators.
+            Explanations matched to your courses — watch picks right here,
+            search all of YouTube, full credit to the creators.
           </p>
         </div>
       </div>
+
+      <form
+        onSubmit={runSearch}
+        role="search"
+        style={{ display: "flex", gap: 8, marginBottom: 14 }}
+      >
+        <label className="sr-only" htmlFor="video-search">
+          Search for videos
+        </label>
+        <input
+          id="video-search"
+          className="input"
+          value={searchDraft}
+          onChange={(e) => setSearchDraft(e.target.value)}
+          placeholder="Search a course, topic, or exam — e.g. thermodynamics past paper"
+          style={{ flex: 1 }}
+          maxLength={200}
+        />
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={searching || searchDraft.trim().length < 2}
+        >
+          {searching ? "Searching…" : "Search"}
+        </button>
+        {searchResult && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setSearchResult(null);
+              setSearchDraft("");
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </form>
+      <InlineError message={searchError} />
+
+      {searchResult ? (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>
+            Results for “{searchResult.query}”
+            {searchResult.refinedQuery !== searchResult.query
+              ? ` · searched as “${searchResult.refinedQuery}”`
+              : ""}
+          </div>
+          {!searchResult.youtubeConfigured ? (
+            <EmptyState
+              icon={<SparklesIcon cls="icon-lg" />}
+              title="Video search isn't configured yet"
+              body="The server needs a YouTube API key before search works — the curated shelf below still does."
+            />
+          ) : searchResult.results.length === 0 ? (
+            <EmptyState
+              icon={<SparklesIcon cls="icon-lg" />}
+              title="Nothing found"
+              body="Try naming the subject and topic — e.g. “A-level chemistry electrolysis”."
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+              {searchResult.results.map((v) => (
+                <YouTubeCard key={v.videoId} v={v} />
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
 
       {(shelf.data?.subjects.length ?? 0) > 0 && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
@@ -138,6 +299,27 @@ export default function Videos() {
       )}
 
       <InlineError message={actionError} />
+
+      {/* Interest-mapped strips: queries built from YOUR subjects and weak
+          topics, never generic. Only rendered with a configured key. */}
+      {!searchResult &&
+        showingFeed &&
+        (suggestions.data?.suggestions.length ?? 0) > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            {suggestions.data!.suggestions.map((group) => (
+              <div key={group.reason} style={{ marginBottom: 14 }}>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>
+                  From YouTube · {group.reason}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {group.videos.slice(0, 3).map((v) => (
+                    <YouTubeCard key={v.videoId} v={v} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
       {loading ? (
         <SkeletonRows rows={4} height={96} />

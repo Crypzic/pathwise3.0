@@ -90,7 +90,10 @@ export function LogoFull({
           fontFamily: "'Fredoka', sans-serif",
           fontWeight: 700,
           fontSize: height * 0.6,
-          color: textColor === "white" ? "#FFFFFF" : "#10201A",
+          // "dark" follows the theme's ink token, so the wordmark stays
+          // visible when dark mode flips the background; "white" stays a
+          // hard white for permanently-dark surfaces (Socratic header).
+          color: textColor === "white" ? "#FFFFFF" : "var(--ink, #10201A)",
         }}
       >
         Pathwise

@@ -12,6 +12,7 @@ import { recordQuizAnswer } from "../lib/mastery.js";
 import { awardXp, grantBadge, XP } from "../lib/gamification.js";
 import { track } from "../lib/analytics.js";
 import { AIBudgetExceededError, gradeWrittenAnswer } from "../lib/aiMeter.js";
+import { AIUnavailableError } from "../ai/resilience.js";
 import { maybeRewardReferral } from "../lib/referrals.js";
 import { isGuestUser } from "../lib/guests.js";
 import { guestMayStartQuiz } from "../lib/guestPolicy.js";
@@ -183,6 +184,9 @@ export default async function quizRoutes(app: FastifyInstance) {
         } catch (err) {
           if (err instanceof AIBudgetExceededError) {
             return reply.code(429).send({ error: err.message });
+          }
+          if (err instanceof AIUnavailableError) {
+            return reply.code(503).send({ error: err.message });
           }
           throw err;
         }

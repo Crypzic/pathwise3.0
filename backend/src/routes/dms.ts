@@ -69,7 +69,17 @@ export default async function dmRoutes(app: FastifyInstance) {
         },
       });
 
-      const rows = [];
+      const rows: {
+        id: string;
+        with: string;
+        withId: string;
+        status: string;
+        incomingRequest: boolean;
+        muted: boolean;
+        unread: number;
+        lastMessage: string | null;
+        lastMessageAt: Date;
+      }[] = [];
       for (const c of conversations) {
         const other = c.aId === me ? c.b : c.a;
         const state = c.states[0];

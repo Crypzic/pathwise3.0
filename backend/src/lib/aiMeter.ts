@@ -9,11 +9,11 @@
 // spend ledger complete.
 import { prisma } from "./prisma.js";
 import { env } from "./env.js";
-import { ai } from "../ai/index.js";
+import { providerFor } from "../ai/index.js";
 import type {
+  AIProvider,
   AIResult,
   ChatMessage,
-  DocumentInput,
   ExtractedTopic,
   ImageInput,
   MaterialVerdict,
@@ -31,14 +31,16 @@ export type AIOperation =
   | "generate_quiz"
   | "socratic_reply"
   | "moderate"
-  | "evaluate_community_post"
   // 2.0 Phase 5: image -> text, feeding the same pipeline as documents.
   | "transcribe_image"
   // Learning layer: breakdowns, Ask PATHWISE, written-answer quizzes.
   | "explain_topic"
   | "ask_reply"
   | "written_questions"
-  | "grade_written";
+  | "grade_written"
+  // Community-creation guardrail + video search intent.
+  | "community_check"
+  | "video_query";
 
 /** Raised when a user has burned through their daily AI budget. */
 export class AIBudgetExceededError extends Error {
@@ -71,10 +73,13 @@ export async function spentTodayMicroUsd(userId: string): Promise<number> {
   return agg._sum.costMicroUsd ?? 0;
 }
 
-async function assertWithinBudget(userId: string | null): Promise<void> {
+async function assertWithinBudget(
+  userId: string | null,
+  provider: AIProvider
+): Promise<void> {
   if (!userId) return;
   // The mock provider is free — never gate it.
-  if (ai.name === "mock") return;
+  if (provider.name === "mock") return;
 
   // Guests get a tighter daily ceiling (PATHWISE 2.0 Phase 1).
   const user = await prisma.user.findUnique({
@@ -96,22 +101,21 @@ async function assertWithinBudget(userId: string | null): Promise<void> {
 
 /**
  * Run an AI call, recording tokens/cost/duration whether it succeeds or not.
+ * `provider` is the resolved (possibly route-overridden) provider handling
+ * this operation — its name goes on the usage row.
  */
 async function meter<T>(
   operation: AIOperation,
   userId: string | null,
+  provider: AIProvider,
   run: () => Promise<AIResult<T>>
 ): Promise<T> {
-  await assertWithinBudget(userId);
+  await assertWithinBudget(userId, provider);
 
   const startedAt = Date.now();
   let usage: TokenUsage = {
-    model:
-      env.AI_PROVIDER === "openai"
-        ? env.OPENAI_MODEL
-        : env.AI_PROVIDER === "gemini"
-          ? env.GEMINI_MODEL
-          : "mock",
+    // Placeholder until the call reports real usage (kept on errors).
+    model: provider.name,
     promptTokens: 0,
     completionTokens: 0,
   };
@@ -132,7 +136,7 @@ async function meter<T>(
       .create({
         data: {
           userId,
-          provider: ai.name,
+          provider: provider.name,
           model: usage.model,
           operation,
           promptTokens: usage.promptTokens,
@@ -154,11 +158,11 @@ async function meter<T>(
 export function extractTopics(
   userId: string | null,
   courseName: string,
-  materialText: string,
-  documentInput?: DocumentInput
+  materialText: string
 ): Promise<ExtractedTopic[]> {
-  return meter("extract_topics", userId, () =>
-    ai.extractTopics(courseName, materialText, documentInput)
+  const p = providerFor("extract_topics");
+  return meter("extract_topics", userId, p, () =>
+    p.extractTopics(courseName, materialText)
   );
 }
 
@@ -168,8 +172,9 @@ export function generateQuiz(
   topics: QuizTopicInput[],
   count: number
 ): Promise<QuizQuestion[]> {
-  return meter("generate_quiz", userId, () =>
-    ai.generateQuiz(courseName, topics, count)
+  const p = providerFor("generate_quiz");
+  return meter("generate_quiz", userId, p, () =>
+    p.generateQuiz(courseName, topics, count)
   );
 }
 
@@ -180,8 +185,9 @@ export function socraticReply(
   history: ChatMessage[],
   ctx?: SocraticContext
 ): Promise<string> {
-  return meter("socratic_reply", userId, () =>
-    ai.socraticReply(courseName, topicName, history, ctx)
+  const p = providerFor("socratic_reply");
+  return meter("socratic_reply", userId, p, () =>
+    p.socraticReply(courseName, topicName, history, ctx)
   );
 }
 
@@ -190,19 +196,9 @@ export function classifyMaterial(
   courseName: string,
   materialText: string
 ): Promise<MaterialVerdict> {
-  return meter("moderate", userId, () =>
-    ai.classifyMaterial(courseName, materialText)
-  );
-}
-
-export function evaluateCommunityPost(
-  userId: string | null,
-  communityName: string,
-  title: string,
-  body: string
-): Promise<MaterialVerdict> {
-  return meter("evaluate_community_post", userId, () =>
-    ai.evaluateCommunityPost(communityName, title, body)
+  const p = providerFor("moderate");
+  return meter("moderate", userId, p, () =>
+    p.classifyMaterial(courseName, materialText)
   );
 }
 
@@ -211,8 +207,9 @@ export function transcribeImage(
   courseName: string,
   image: ImageInput
 ): Promise<string> {
-  return meter("transcribe_image", userId, () =>
-    ai.transcribeImage(courseName, image)
+  const p = providerFor("transcribe_image");
+  return meter("transcribe_image", userId, p, () =>
+    p.transcribeImage(courseName, image)
   );
 }
 
@@ -225,8 +222,9 @@ export function explainTopic(
   conceptContext: string,
   materialText: string
 ): Promise<TopicBreakdown | null> {
-  return meter("explain_topic", userId, () =>
-    ai.explainTopic(courseName, topicName, conceptContext, materialText)
+  const p = providerFor("explain_topic");
+  return meter("explain_topic", userId, p, () =>
+    p.explainTopic(courseName, topicName, conceptContext, materialText)
   );
 }
 
@@ -237,8 +235,9 @@ export function askReply(
   history: ChatMessage[],
   grounding: string
 ): Promise<string> {
-  return meter("ask_reply", userId, () =>
-    ai.askReply(courseName, topicName, history, grounding)
+  const p = providerFor("ask_reply");
+  return meter("ask_reply", userId, p, () =>
+    p.askReply(courseName, topicName, history, grounding)
   );
 }
 
@@ -248,8 +247,9 @@ export function generateWrittenQuestions(
   topics: QuizTopicInput[],
   count: number
 ): Promise<WrittenQuestion[]> {
-  return meter("written_questions", userId, () =>
-    ai.generateWrittenQuestions(courseName, topics, count)
+  const p = providerFor("written_questions");
+  return meter("written_questions", userId, p, () =>
+    p.generateWrittenQuestions(courseName, topics, count)
   );
 }
 
@@ -259,9 +259,29 @@ export function gradeWrittenAnswer(
   referenceAnswer: string,
   studentAnswer: string
 ): Promise<WrittenGrade> {
-  return meter("grade_written", userId, () =>
-    ai.gradeWrittenAnswer(question, referenceAnswer, studentAnswer)
+  const p = providerFor("grade_written");
+  return meter("grade_written", userId, p, () =>
+    p.gradeWrittenAnswer(question, referenceAnswer, studentAnswer)
   );
+}
+
+export function classifyCommunityTopic(
+  userId: string | null,
+  name: string,
+  description: string
+): Promise<{ educational: boolean; reason: string }> {
+  const p = providerFor("community_check");
+  return meter("community_check", userId, p, () =>
+    p.classifyCommunityTopic(name, description)
+  );
+}
+
+export function refineVideoQuery(
+  userId: string | null,
+  query: string
+): Promise<string> {
+  const p = providerFor("video_query");
+  return meter("video_query", userId, p, () => p.refineVideoQuery(query));
 }
 
 /** Aggregate spend for the ops dashboard / cost alerting. */
@@ -273,7 +293,7 @@ export async function usageSummary(sinceDays = 7) {
     _sum: { costMicroUsd: true, promptTokens: true, completionTokens: true },
     _count: { _all: true },
   });
-  return rows.map((r: (typeof rows)[number]) => ({
+  return rows.map((r) => ({
     operation: r.operation,
     calls: r._count._all,
     promptTokens: r._sum.promptTokens ?? 0,

@@ -11,6 +11,28 @@ import { track } from "../lib/analytics.js";
 import { features } from "../lib/features.js";
 import { createGuestUser } from "../lib/guests.js";
 import { guestDaysLeft } from "../lib/guestPolicy.js";
+import { avatarUrlFor } from "./profile.js";
+
+/**
+ * The one email registration earns (notifications are otherwise in-app
+ * only). Best-effort: a mail hiccup must never fail a signup.
+ */
+async function sendWelcomeEmail(to: string, name: string): Promise<void> {
+  try {
+    await email.sendNotification({
+      to,
+      subject: "Welcome to Pathwise 🌱",
+      body:
+        `Hi ${name} — your account is ready. Upload your course material, ` +
+        `get your knowledge map, and let the Socratic tutor make it stick. ` +
+        `Everything else happens in the app.`,
+      actionUrl: `${env.APP_URL}/courses`,
+      actionLabel: "Start studying",
+    });
+  } catch (err) {
+    console.warn("⚠️  Welcome email failed:", err);
+  }
+}
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -55,6 +77,8 @@ function publicUser(
     bestStreak: number;
     isGuest: boolean;
     guestExpiresAt: Date | null;
+    avatarPath?: string | null;
+    avatarFrame?: string;
     // Present when the caller included the learner profile (Phase 2).
     learnerProfile?: { onboardedAt: Date | null } | null;
   },
@@ -65,6 +89,8 @@ function publicUser(
     name: u.name,
     email: u.email,
     username: u.username,
+    avatarUrl: avatarUrlFor({ id: u.id, avatarPath: u.avatarPath ?? null }),
+    avatarFrame: u.avatarFrame ?? "classic",
     privacyAccepted: u.privacyAcceptedAt !== null,
     socraticIntroSeen: u.socraticIntroSeenAt !== null,
     xp: u.xp,
@@ -114,6 +140,8 @@ export default async function authRoutes(app: FastifyInstance) {
       await attachReferral(user.id, referralCode);
     }
     await track(user.id, "signup", { referred: Boolean(referralCode) });
+    // Registration is the one moment that earns an email.
+    void sendWelcomeEmail(user.email, user.name);
 
     const token = app.jwt.sign({ sub: user.id, email: user.email });
       return reply.code(201).send({ token, user: publicUser(user) });
@@ -202,6 +230,8 @@ export default async function authRoutes(app: FastifyInstance) {
         await attachReferral(user.id, referralCode);
       }
       await track(user.id, "guest_claimed", { referred: Boolean(referralCode) });
+      // Claiming IS registration — same single welcome email.
+      void sendWelcomeEmail(user.email, user.name);
 
       // Re-sign: the old token carries the synthetic email and guest TTL.
       const token = app.jwt.sign({ sub: user.id, email: user.email });

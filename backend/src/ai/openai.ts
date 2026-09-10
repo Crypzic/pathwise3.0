@@ -7,7 +7,6 @@ import type {
   AIProvider,
   AIResult,
   ChatMessage,
-  DocumentInput,
   ExtractedTopic,
   ImageInput,
   MaterialVerdict,
@@ -22,7 +21,7 @@ import type {
 import {
   askSystemPrompt,
   classifyMaterialPrompt,
-  evaluateCommunityPostPrompt,
+  communityTopicPrompt,
   explainTopicPrompt,
   extractTopicsPrompt,
   generateQuizPrompt,
@@ -31,11 +30,14 @@ import {
   socraticSystemPrompt,
   transcribeImagePrompt,
   validateBreakdown,
+  validateCommunityVerdict,
   validateGrade,
   validateQuestions,
   validateTopics,
   validateVerdict,
+  validateVideoQuery,
   validateWrittenQuestions,
+  videoQueryPrompt,
   writtenQuestionsPrompt,
 } from "./prompts.js";
 import { env } from "../lib/env.js";
@@ -85,10 +87,7 @@ export class OpenAIProvider implements AIProvider {
 
   async extractTopics(
     courseName: string,
-    materialText: string,
-    // OpenAI path here has no document-vision wiring yet — accepted for
-    // interface compatibility, intentionally unused.
-    _documentInput?: DocumentInput
+    materialText: string
   ): Promise<AIResult<ExtractedTopic[]>> {
     const { system, user } = extractTopicsPrompt(courseName, materialText);
     const { parsed, usage } = await this.json<{ topics: ExtractedTopic[] }>(
@@ -136,23 +135,6 @@ export class OpenAIProvider implements AIProvider {
     materialText: string
   ): Promise<AIResult<MaterialVerdict>> {
     const { system, user } = classifyMaterialPrompt(courseName, materialText);
-    const { parsed, usage } = await this.json<Partial<MaterialVerdict>>(
-      system,
-      user
-    );
-    return { value: validateVerdict(parsed), usage };
-  }
-
-  async evaluateCommunityPost(
-    communityName: string,
-    title: string,
-    body: string
-  ): Promise<AIResult<MaterialVerdict>> {
-    const { system, user } = evaluateCommunityPostPrompt(
-      communityName,
-      title,
-      body
-    );
     const { parsed, usage } = await this.json<Partial<MaterialVerdict>>(
       system,
       user
@@ -212,6 +194,24 @@ export class OpenAIProvider implements AIProvider {
       user
     );
     return { value: validateWrittenQuestions(parsed), usage };
+  }
+
+  async classifyCommunityTopic(
+    name: string,
+    description: string
+  ): Promise<AIResult<{ educational: boolean; reason: string }>> {
+    const { system, user } = communityTopicPrompt(name, description);
+    const { parsed, usage } = await this.json<Record<string, unknown>>(
+      system,
+      user
+    );
+    return { value: validateCommunityVerdict(parsed), usage };
+  }
+
+  async refineVideoQuery(query: string): Promise<AIResult<string>> {
+    const { system, user } = videoQueryPrompt(query);
+    const { parsed, usage } = await this.json<{ query?: unknown }>(system, user);
+    return { value: validateVideoQuery(parsed, query), usage };
   }
 
   async gradeWrittenAnswer(

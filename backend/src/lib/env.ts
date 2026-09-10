@@ -24,26 +24,47 @@ const schema = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   PORT: z.coerce.number().default(4000),
   // "gemini" is the testing-phase primary (PATHWISE 2.0 Phase 3), but nothing
-  // outside src/ai/ may depend on which provider is active.
-  AI_PROVIDER: z.enum(["mock", "openai", "gemini"]).default("mock"),
+  // outside src/ai/ may depend on which provider is active. Four real
+  // providers are supported: openai, gemini, claude (Anthropic), grok (xAI).
+  AI_PROVIDER: z
+    .enum(["mock", "openai", "gemini", "claude", "grok"])
+    .default("mock"),
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   GEMINI_API_KEY: z.string().default(""),
-  // gemini-2.5-flash retires Oct 16 2026 and is already unstable ahead of
-  // that date. gemini-3.1-flash-lite is Google's stable, long-term
-  // workhorse model for this workload (extraction/quiz/chat) and is not on
-  // a deprecation clock.
-  GEMINI_MODEL: z.string().default("gemini-3.1-flash-lite"),
-  // Fallback model tried once if the primary model call fails (timeout,
-  // 5xx, malformed response) before dropping to the mock provider.
-  GEMINI_FALLBACK_MODEL: z.string().default("gemini-2.5-flash-lite"),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
+  // Tried once when GEMINI_MODEL stays overloaded through every retry —
+  // hot new models 503 under demand spikes. Empty disables the fallback.
+  GEMINI_FALLBACK_MODEL: z.string().default("gemini-2.5-flash"),
+  ANTHROPIC_API_KEY: z.string().default(""),
+  CLAUDE_MODEL: z.string().default("claude-opus-5"),
+  XAI_API_KEY: z.string().default(""),
+  GROK_MODEL: z.string().default("grok-4"),
+
+  // --- Per-task provider routing (optional) --------------------------------
+  // Route groups of AI operations to different providers — the right model
+  // for each job at ~1x cost, instead of one model for everything. Empty =
+  // fall back to AI_PROVIDER. A route whose provider has no API key falls
+  // back to AI_PROVIDER too (never silently to mock in production).
+  //   TUTOR:      socratic_reply, ask_reply, explain_topic (learning quality)
+  //   QUIZ:       generate_quiz, written_questions, grade_written
+  //   MODERATION: moderate, community_check (high volume, cheap+fast)
+  //   EXTRACT:    extract_topics, transcribe_image, video_query
+  AI_PROVIDER_TUTOR: z
+    .enum(["", "mock", "openai", "gemini", "claude", "grok"])
+    .default(""),
+  AI_PROVIDER_QUIZ: z
+    .enum(["", "mock", "openai", "gemini", "claude", "grok"])
+    .default(""),
+  AI_PROVIDER_MODERATION: z
+    .enum(["", "mock", "openai", "gemini", "claude", "grok"])
+    .default(""),
+  AI_PROVIDER_EXTRACT: z
+    .enum(["", "mock", "openai", "gemini", "claude", "grok"])
+    .default(""),
   // Image uploads travel to the vision provider base64-encoded in one request
   // (2.0 Phase 5) — cap them tighter than documents.
   MAX_IMAGE_MB: z.coerce.number().min(1).max(20).default(8),
-  // Above this, a PDF is parsed to text locally only — Gemini's inline
-  // request body caps out around 20MB and base64 inflates size by ~33%,
-  // so this stays well under that regardless of AI provider.
-  MAX_INLINE_PDF_MB: z.coerce.number().min(1).max(20).default(15),
   FREE_COURSE_CAP: z.coerce.number().default(3),
 
   // Email — used for the forgot-password flow. Mock (default, free, logs to
@@ -60,6 +81,18 @@ const schema = z.object({
   // local DATABASE_URL file, which survives restarts/redeploys.
   TURSO_DATABASE_URL: z.string().optional(),
   TURSO_AUTH_TOKEN: z.string().optional(),
+  // Platform alias: some deploys provide the libsql URL as DATABASE_URL with
+  // its token in DATABASE_AUTH_TOKEN instead of the TURSO_* pair. Honored in
+  // lib/prisma.ts; TURSO_* wins when both are set.
+  DATABASE_AUTH_TOKEN: z.string().optional(),
+
+  // Deployed frontend origin (e.g. https://pathwise.vercel.app). Used for
+  // email links (falls back to APP_URL) and appended to the CORS allowlist.
+  FRONTEND_URL: z.string().optional(),
+
+  // YouTube Data API v3 key for video search + interest-mapped suggestions.
+  // Empty = the Videos surface serves only the curated catalog.
+  YOUTUBE_API_KEY: z.string().default(""),
 
   // --- AI cost metering (Step 1 item 6) -----------------------------------
   // USD per 1M tokens for the configured model, used to estimate spend per
@@ -150,12 +183,21 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+// FRONTEND_URL (the production key) takes precedence over APP_URL for every
+// link the backend builds (reset emails, referral links, checkout returns).
+if (parsed.data.FRONTEND_URL) {
+  parsed.data.APP_URL = parsed.data.FRONTEND_URL.replace(/\/$/, "");
+}
+
 export const env = parsed.data;
 
-/** CORS_ORIGIN split into individual origins. */
-export const corsOrigins: string[] = env.CORS_ORIGIN.split(",")
-  .map((o) => o.trim())
-  .filter((o) => o.length > 0);
+/** CORS_ORIGIN split into individual origins; FRONTEND_URL always included. */
+export const corsOrigins: string[] = [
+  ...env.CORS_ORIGIN.split(","),
+  ...(env.FRONTEND_URL ? [env.FRONTEND_URL] : []),
+]
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter((o, i, all) => o.length > 0 && all.indexOf(o) === i);
 
 // Boot-time nagging beats a silent weak deployment. Not fatal — dev secrets
 // are legitimately short — but production shouldn't get to ignore it quietly.

@@ -16,15 +16,24 @@ import { env } from "./env.js";
 // Importing it only when Turso is actually configured keeps that failure
 // scoped to the deployment that opted in.
 async function createPrismaClient(): Promise<PrismaClient> {
-  if (!env.TURSO_DATABASE_URL) {
+  // Platform alias: a libsql DATABASE_URL + DATABASE_AUTH_TOKEN pair works
+  // the same as TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (TURSO_* wins).
+  const remoteUrl =
+    env.TURSO_DATABASE_URL ??
+    (env.DATABASE_AUTH_TOKEN && env.DATABASE_URL.startsWith("libsql")
+      ? env.DATABASE_URL
+      : undefined);
+  const authToken = env.TURSO_AUTH_TOKEN ?? env.DATABASE_AUTH_TOKEN;
+
+  if (!remoteUrl) {
     return new PrismaClient();
   }
 
   try {
     const { PrismaLibSQL } = await import("@prisma/adapter-libsql");
     const adapter = new PrismaLibSQL({
-      url: env.TURSO_DATABASE_URL,
-      authToken: env.TURSO_AUTH_TOKEN,
+      url: remoteUrl,
+      authToken,
     });
     return new PrismaClient({ adapter });
   } catch (err) {

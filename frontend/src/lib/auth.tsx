@@ -24,6 +24,8 @@ export interface User {
   name: string;
   email: string;
   username: string | null;
+  avatarUrl: string | null;
+  avatarFrame: string;
   privacyAccepted: boolean;
   xp: number;
   streakCount: number;

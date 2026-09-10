@@ -25,12 +25,11 @@ import roomRoutes from "./routes/rooms.js";
 import errorRoutes from "./routes/errors.js";
 import topicRoutes from "./routes/topics.js";
 import opsRoutes from "./routes/ops.js";
-import { ai } from "./ai/index.js";
+import { ai, routingSummary } from "./ai/index.js";
 import { email } from "./email/index.js";
 import { billing } from "./lib/billing.js";
 import { seedBadges } from "./lib/gamification.js";
 import { seedShopItems } from "./lib/garden.js";
-import { seedCommunities } from "./lib/communities.js";
 import { seedVideos } from "./lib/videos.js";
 import { recordError } from "./lib/errors.js";
 import { publicFeatures } from "./lib/features.js";
@@ -136,6 +135,8 @@ await app.register(opsRoutes);
 app.get("/api/health", async () => ({
   status: "ok",
   aiProvider: ai.name,
+  // Per-task provider routing (tutor/quiz/moderation/extract).
+  aiRouting: routingSummary(),
   emailProvider: email.name,
   billingProvider: billing.name,
 }));
@@ -149,10 +150,11 @@ app.get("/api/config", async () => ({
 
 // Reference data the app needs before it can gate anything: badge definitions
 // and the shop catalogue. Both upserts, so this is safe on every boot.
+// No community seeding: communities are user-created (behind the educational
+// guardrail) and surfaced by interest match, per the 2.0 frontend spec.
 try {
   await seedBadges();
   await seedShopItems();
-  await seedCommunities();
   await seedVideos();
 } catch (err) {
   app.log.error({ err }, "Failed to seed reference data");

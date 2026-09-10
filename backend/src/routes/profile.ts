@@ -6,12 +6,17 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { hashPassword, verifyPassword } from "../lib/auth.js";
 import { rankFor, RANKS } from "../lib/gamification.js";
+import { imageKindFor } from "../lib/parse.js";
+import { matchesImageSignature } from "../lib/fileSignature.js";
+import { saveUpload, storage } from "../lib/storage.js";
 import { referralStatus } from "../lib/referrals.js";
 import { track } from "../lib/analytics.js";
 import type { UserBadge, Badge } from "@prisma/client";
 
 const RECOVERY_WINDOW_DAYS = 30;
 
+// Notifications are automatic now (in-app only, email just at
+// registration) — the old notify* toggles are gone from this surface.
 const updateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   username: z
@@ -22,11 +27,6 @@ const updateSchema = z.object({
     .optional(),
   email: z.string().email().optional(),
   timezone: z.string().max(64).optional(),
-  notifyStreak: z.boolean().optional(),
-  notifyReviewDue: z.boolean().optional(),
-  notifyUnlocks: z.boolean().optional(),
-  notifyEmail: z.boolean().optional(),
-  notifyHour: z.number().int().min(0).max(23).optional(),
 });
 
 const passwordSchema = z.object({
@@ -38,15 +38,35 @@ const deleteSchema = z.object({
   password: z.string().min(1),
 });
 
-// Rank-gated cosmetic unlocks (Step 10 item 2). Frames are earned, never
-// bought — that's what keeps them meaningful.
-const PROFILE_FRAMES = [
-  { key: "frame_leaf", name: "Leaf Frame", requiredLevel: 1 },
-  { key: "frame_bloom", name: "Bloom Frame", requiredLevel: 3 },
-  { key: "frame_lantern", name: "Lantern Frame", requiredLevel: 4 },
-  { key: "frame_constellation", name: "Constellation Frame", requiredLevel: 6 },
-  { key: "frame_aurora", name: "Aurora Frame", requiredLevel: 8 },
+// Avatar frames: three free designs anyone can wear, three earned by rank
+// (never bought — that's what keeps them meaningful). The keys map to CSS
+// frame classes in the frontend; each renders as a live preview there.
+export const PROFILE_FRAMES = [
+  { key: "classic", name: "Classic", description: "Clean solid ring in Pathwise green", requiredLevel: 1 },
+  { key: "halo", name: "Halo", description: "Thin double ring with a soft glow", requiredLevel: 1 },
+  { key: "sprout", name: "Sprout", description: "Dashed organic ring with a leaf accent", requiredLevel: 1 },
+  { key: "bronze", name: "Bronze Scholar", description: "Warm bronze gradient with a metallic sheen", requiredLevel: 3 },
+  { key: "laurel", name: "Golden Laurel", description: "Rich gold double ring", requiredLevel: 5 },
+  { key: "prismatic", name: "Prismatic", description: "Slowly rotating rainbow — animated", requiredLevel: 7 },
 ] as const;
+
+const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
+
+/** Public URL for a user's avatar; the path's uuid makes it cache-busting. */
+export function avatarUrlFor(user: {
+  id: string;
+  avatarPath: string | null;
+}): string | null {
+  if (!user.avatarPath) return null;
+  const version = user.avatarPath.split("/").pop()?.slice(0, 8) ?? "0";
+  return `/api/users/${user.id}/avatar?v=${version}`;
+}
+
+const AVATAR_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+};
 
 export default async function profileRoutes(app: FastifyInstance) {
   // Everything the Profile screen needs in one read.
@@ -74,13 +94,8 @@ export default async function profileRoutes(app: FastifyInstance) {
         email: user.email,
         timezone: user.timezone,
         createdAt: user.createdAt,
-      },
-      notifications: {
-        streak: user.notifyStreak,
-        reviewDue: user.notifyReviewDue,
-        unlocks: user.notifyUnlocks,
-        email: user.notifyEmail,
-        hour: user.notifyHour,
+        avatarUrl: avatarUrlFor(user),
+        avatarFrame: user.avatarFrame,
       },
       progress: {
         xp: user.xp,
@@ -109,6 +124,7 @@ export default async function profileRoutes(app: FastifyInstance) {
       frames: PROFILE_FRAMES.map((f) => ({
         ...f,
         unlocked: rank.level >= f.requiredLevel,
+        selected: user.avatarFrame === f.key,
       })),
       ranks: RANKS.map((r) => ({ ...r, reached: user.xp >= r.minXp })),
       referral,
@@ -180,15 +196,134 @@ export default async function profileRoutes(app: FastifyInstance) {
         email: user.email,
         timezone: user.timezone,
       },
-      notifications: {
-        streak: user.notifyStreak,
-        reviewDue: user.notifyReviewDue,
-        unlocks: user.notifyUnlocks,
-        email: user.notifyEmail,
-        hour: user.notifyHour,
-      },
     });
   });
+
+  // Upload a profile picture. Same defenses as course images: real magic
+  // bytes or nothing, tight size cap, stored via the storage provider.
+  app.post(
+    "/api/profile/avatar",
+    {
+      preHandler: [app.authenticate],
+      config: { rateLimit: { max: 10, timeWindow: "10 minutes" } },
+    },
+    async (req, reply) => {
+      const data = await req.file();
+      if (!data) return reply.code(400).send({ error: "No image uploaded" });
+
+      const kind = imageKindFor(data.filename, data.mimetype);
+      if (!kind) {
+        return reply
+          .code(415)
+          .send({ error: "Use a PNG, JPG, or WebP image." });
+      }
+      const buffer = await data.toBuffer();
+      if (buffer.length > MAX_AVATAR_BYTES) {
+        return reply.code(413).send({ error: "Image too large (4MB max)." });
+      }
+      if (!matchesImageSignature(kind, buffer)) {
+        return reply
+          .code(415)
+          .send({ error: "That file doesn't look like a real image." });
+      }
+
+      const previous = await prisma.user.findUnique({
+        where: { id: req.user.sub },
+        select: { avatarPath: true },
+      });
+      const saved = await saveUpload(
+        req.user.sub,
+        `avatar.${kind}`,
+        buffer
+      );
+      const user = await prisma.user.update({
+        where: { id: req.user.sub },
+        data: { avatarPath: saved.storagePath },
+      });
+      // The old picture is dead weight the moment the new one lands.
+      if (previous?.avatarPath) {
+        await storage.remove(previous.avatarPath).catch(() => {});
+      }
+      return reply.send({ avatarUrl: avatarUrlFor(user) });
+    }
+  );
+
+  // Remove the profile picture (back to the initial).
+  app.delete(
+    "/api/profile/avatar",
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.sub },
+        select: { avatarPath: true },
+      });
+      if (user?.avatarPath) {
+        await storage.remove(user.avatarPath).catch(() => {});
+        await prisma.user.update({
+          where: { id: req.user.sub },
+          data: { avatarPath: null },
+        });
+      }
+      return reply.send({ avatarUrl: null });
+    }
+  );
+
+  // Serve an avatar. Public on purpose: <img> tags can't send auth headers,
+  // and every surface that shows avatars requires sign-in anyway. The path
+  // rotates per upload, so long immutable caching is safe.
+  app.get("/api/users/:id/avatar", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { avatarPath: true, deletedAt: true },
+    });
+    if (!user?.avatarPath || user.deletedAt) {
+      return reply.code(404).send({ error: "No avatar" });
+    }
+    try {
+      const buffer = await storage.read(user.avatarPath);
+      const ext = user.avatarPath.split(".").pop() ?? "png";
+      reply.header("Cache-Control", "public, max-age=31536000, immutable");
+      reply.type(AVATAR_MIME[ext] ?? "image/png");
+      return reply.send(buffer);
+    } catch {
+      return reply.code(404).send({ error: "No avatar" });
+    }
+  });
+
+  // Choose an avatar frame. Free frames for everyone; earned frames are
+  // enforced here, not just hidden in the UI.
+  app.post(
+    "/api/profile/frame",
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const parsed = z
+        .object({ frame: z.string().min(1).max(30) })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Send { frame }" });
+      }
+      const choice = PROFILE_FRAMES.find((f) => f.key === parsed.data.frame);
+      if (!choice) {
+        return reply.code(400).send({ error: "Unknown frame" });
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.sub },
+        select: { xp: true },
+      });
+      const rank = rankFor(user?.xp ?? 0);
+      if (rank.level < choice.requiredLevel) {
+        return reply.code(403).send({
+          error: `${choice.name} unlocks at level ${choice.requiredLevel}.`,
+        });
+      }
+      await prisma.user.update({
+        where: { id: req.user.sub },
+        data: { avatarFrame: choice.key },
+      });
+      return reply.send({ avatarFrame: choice.key });
+    }
+  );
 
   // Change password — requires the current one even though the user is signed
   // in, so a hijacked session can't lock the owner out.

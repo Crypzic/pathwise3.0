@@ -4,10 +4,11 @@
 // added here once. Currently: course uploads and creator videos.
 import { prisma } from "./prisma.js";
 import { storage } from "./storage.js";
+// Registered file sources: course uploads, creator videos, avatars.
 
 /** Collect every storage path belonging to a user. */
 export async function collectUserStoragePaths(userId: string): Promise<string[]> {
-  const [uploads, creatorVideos] = await Promise.all([
+  const [uploads, creatorVideos, user] = await Promise.all([
     prisma.upload.findMany({
       where: { course: { userId } },
       select: { storagePath: true },
@@ -16,10 +17,15 @@ export async function collectUserStoragePaths(userId: string): Promise<string[]>
       where: { creatorId: userId },
       select: { storagePath: true },
     }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatarPath: true },
+    }),
   ]);
   return [
     ...uploads.map((u) => u.storagePath),
     ...creatorVideos.map((v) => v.storagePath),
+    ...(user?.avatarPath ? [user.avatarPath] : []),
   ];
 }
 

@@ -1,0 +1,12 @@
+# Default owners for everything (update usernames once your team's on GitHub)
+* @YOUR_GITHUB_USERNAME
+
+# Backend
+/backend/ @YOUR_GITHUB_USERNAME
+
+# Frontend
+/frontend/ @YOUR_GITHUB_USERNAME
+
+# Product/decisions docs shouldn't change without founder review
+/docs/product/ @YOUR_GITHUB_USERNAME
+/docs/decisions/ @YOUR_GITHUB_USERNAME
