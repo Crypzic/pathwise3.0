@@ -1,11 +1,13 @@
 // One community (PATHWISE 2.0 Phase 9): its posts, sub-communities and a
 // composer for members. Joining happens here too so a deep link works.
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
 import { useApi } from "../lib/useApi";
+import { Avatar } from "../components/Avatar";
 import { UsersIcon } from "../components/icons";
+import { StaggerContainer, StaggerItem } from "../components/motion";
 import {
   EmptyState,
   ErrorState,
@@ -18,11 +20,22 @@ interface PostRow {
   kind: string;
   title: string;
   author: string;
+  authorId: string;
+  authorAvatarUrl: string | null;
+  authorAvatarFrame: string;
   mine: boolean;
   replies: number;
   helpful: number;
   reactedByMe: boolean;
   createdAt: string;
+}
+
+interface MemberRow {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  avatarFrame: string;
+  me: boolean;
 }
 
 interface CommunityResponse {
@@ -35,6 +48,7 @@ interface CommunityResponse {
     children: { id: string; name: string; slug: string }[];
     joined: boolean;
   };
+  members: MemberRow[];
   posts: PostRow[];
   nextCursor: string | null;
 }
@@ -148,6 +162,86 @@ function Composer({
   );
 }
 
+/** Tap a member's face → send them a message request right here. */
+function MemberStrip({ members }: { members: MemberRow[] }) {
+  const navigate = useNavigate();
+  const [target, setTarget] = useState<MemberRow | null>(null);
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const others = members.filter((m) => !m.me);
+  if (others.length === 0) return null;
+
+  async function send() {
+    if (!target || body.trim().length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.post<{ conversation: { id: string } }>("/api/dms", {
+        toId: target.userId,
+        body: body.trim(),
+      });
+      navigate(`/messages/${res.conversation.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't send that.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ margin: "4px 0 14px" }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {others.slice(0, 12).map((m) => (
+          <button
+            key={m.userId}
+            className="icon-btn"
+            style={{ width: "auto", height: "auto", padding: 3, borderRadius: 50 }}
+            title={`Message ${m.name}`}
+            aria-label={`Message ${m.name}`}
+            onClick={() => {
+              setTarget(target?.userId === m.userId ? null : m);
+              setBody("");
+              setError(null);
+            }}
+          >
+            <Avatar name={m.name} url={m.avatarUrl} frame={m.avatarFrame} size={34} />
+          </button>
+        ))}
+      </div>
+      {target && (
+        <div className="card" style={{ padding: 12, marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+            Send <strong>{target.name}</strong> a message request:
+          </span>
+          <InlineError message={error} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="input"
+              style={{ flex: 1 }}
+              placeholder="Say hi…"
+              value={body}
+              maxLength={3000}
+              onChange={(e) => setBody(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void send();
+              }}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={send}
+              disabled={busy || body.trim().length === 0}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CommunityView() {
   const { id } = useParams<{ id: string }>();
   const [joinBusy, setJoinBusy] = useState(false);
@@ -226,6 +320,9 @@ export default function CommunityView() {
         </button>
       </div>
 
+      {/* Who's here — tap a face to message them (Phase 2.3). */}
+      <MemberStrip members={data.members} />
+
       <div style={{ margin: "14px 0" }}>
         {community.joined ? (
           <Composer communityId={community.id} onPosted={reload} />
@@ -243,10 +340,10 @@ export default function CommunityView() {
           body="Be the first — ask the question you're actually stuck on."
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <StaggerContainer style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {posts.map((p) => (
+            <StaggerItem key={p.id}>
             <Link
-              key={p.id}
               to={`/communities/posts/${p.id}`}
               className="card"
               style={{ padding: 16, display: "block" }}
@@ -257,14 +354,16 @@ export default function CommunityView() {
                 </span>
                 <span style={{ fontWeight: 650, fontSize: 14.5 }}>{p.title}</span>
               </div>
-              <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--ink-soft)", marginTop: 8 }}>
+                <Avatar name={p.author} url={p.authorAvatarUrl} frame={p.authorAvatarFrame} size={20} />
                 {p.author} · {timeAgo(p.createdAt)} · {p.replies} repl
                 {p.replies === 1 ? "y" : "ies"}
                 {p.helpful > 0 ? ` · ${p.helpful} found this helpful` : ""}
               </div>
             </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerContainer>
       )}
     </AppShell>
   );

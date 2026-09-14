@@ -7,6 +7,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
+import { stageLabel, waitForUpload } from "../lib/uploads";
 import { UploadIcon, FileIcon, CheckIcon, AlertIcon } from "../components/icons";
 import { InlineError } from "../components/states";
 
@@ -123,23 +124,34 @@ export default function NewCourse() {
 
     for (let i = 0; i < files.length; i++) {
       if (files[i].status !== "queued") continue;
-      updateFile(i, { status: "uploading" });
+      updateFile(i, { status: "uploading", message: stageLabel("pending") });
       try {
-        const res = await api.upload<{
-          upload: { status: string; error: string | null };
-          topicCount: number;
-        }>(`/api/courses/${courseId}/uploads`, files[i].file);
-        lastTopicCount = res.topicCount;
-        anyProcessed = true;
-        updateFile(i, {
-          status: "processed",
-          message: `${res.topicCount} topics in the map so far`,
-        });
+        // 202 immediately; processing is a background job we poll, showing
+        // the real pipeline stage on the file row as it moves.
+        const res = await api.upload<{ upload: { id: string } }>(
+          `/api/courses/${courseId}/uploads`,
+          files[i].file
+        );
+        const done = await waitForUpload(courseId, res.upload.id, (stage) =>
+          updateFile(i, { status: "uploading", message: stageLabel(stage) })
+        );
+        if (done.status === "processed") {
+          lastTopicCount = done.topicCount;
+          anyProcessed = true;
+          updateFile(i, {
+            status: "processed",
+            message: `${done.topicCount} topics in the map so far`,
+          });
+        } else {
+          updateFile(i, {
+            status: done.status === "rejected" ? "rejected" : "failed",
+            message: done.error ?? "Processing failed.",
+          });
+        }
       } catch (err) {
         const apiErr = err instanceof ApiError ? err : null;
-        // 422 = the file was readable but isn't course material (Step 15).
         updateFile(i, {
-          status: apiErr?.status === 422 ? "rejected" : "failed",
+          status: "failed",
           message: apiErr?.message ?? "Upload failed.",
         });
       }
@@ -167,7 +179,7 @@ export default function NewCourse() {
           </span>
         );
       case "uploading":
-        return <span className="pill pill-muted">Processing…</span>;
+        return <span className="pill pill-muted">{f.message ?? "Processing…"}</span>;
       case "rejected":
         return <span className="pill pill-coral">Not course material</span>;
       case "failed":

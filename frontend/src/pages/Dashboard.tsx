@@ -18,6 +18,7 @@ import {
   InlineError,
   SkeletonRows,
 } from "../components/states";
+import { StaggerContainer, StaggerItem } from "../components/motion";
 
 interface DashboardResponse {
   course: { id: string; name: string };
@@ -225,9 +226,9 @@ export default function Dashboard() {
           }
         />
       ) : (
-        <div className="heatmap-grid" style={{ marginBottom: 28 }}>
+        <StaggerContainer className="heatmap-grid" style={{ marginBottom: 28 }}>
           {heatmap.map((t) => (
-            <div
+            <StaggerItem
               key={t.topicId}
               className={heatClass(t.mastery, t.attempted)}
               style={
@@ -243,9 +244,9 @@ export default function Dashboard() {
             >
               <div className="t-name">{t.name}</div>
               <div className="t-pct">{t.attempted ? `${t.mastery}%` : "—"}</div>
-            </div>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerContainer>
       )}
 
       {/* Step 8 item 2 — the honest version of the mastery number. */}

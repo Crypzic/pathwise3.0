@@ -16,6 +16,7 @@ import {
   UploadIcon,
 } from "../components/icons";
 import { Collapsible } from "../components/Collapsible";
+import { StaggerContainer, StaggerItem } from "../components/motion";
 import { ErrorState, InlineError, SkeletonRows } from "../components/states";
 
 interface Quest {
@@ -287,10 +288,10 @@ export default function StudyPlan() {
         )}
       </h2>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <StaggerContainer style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {plan.quests.map((q) => (
+          <StaggerItem key={q.id}>
           <button
-            key={q.id}
             className="quest-card"
             style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
             onClick={() => startQuest(q)}
@@ -307,8 +308,9 @@ export default function StudyPlan() {
             </div>
             {q.xp > 0 && <span className="xp-chip">+{q.xp} XP</span>}
           </button>
+          </StaggerItem>
         ))}
-      </div>
+      </StaggerContainer>
     </AppShell>
   );
 }

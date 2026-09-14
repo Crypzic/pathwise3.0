@@ -93,7 +93,19 @@ const up = await fetch(`${BASE}/api/courses/${courseId}/uploads`, {
   headers: { authorization: `Bearer ${tokG}` },
   body: form,
 });
-check("guest uploads a file (201)", up.status === 201, `got ${up.status}`);
+check("guest uploads a file (202)", up.status === 202, `got ${up.status}`);
+// Let the background pipeline finish before we expire + purge the guest,
+// so the sweep test isn't racing an in-flight job.
+{
+  const upId = (await up.json())?.upload?.id;
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    const r = await req("GET", `/api/courses/${courseId}/uploads/${upId}`, { token: tokG });
+    const s = r.data?.upload?.status;
+    if (s === "processed" || s === "failed" || s === "rejected") break;
+    await new Promise((r2) => setTimeout(r2, 400));
+  }
+}
 
 // Local storage keys are <userId>/<uuid>-<name> under backend/uploads.
 const guestDir = join(process.cwd(), "uploads", guestId);

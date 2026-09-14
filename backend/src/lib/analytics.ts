@@ -65,6 +65,9 @@ export type EventName =
   | "dm_request_responded"
   | "dm_block_toggled"
   | "user_reported"
+  // Home Pathwise chat (UX overhaul Phase 5)
+  | "chat_attachment_parsed"
+  | "home_chat_turn"
   // Curated videos (PATHWISE 2.0 Phase 14)
   | "video_engaged"
   // Hidden creator infrastructure (PATHWISE 2.0 Phase 16)

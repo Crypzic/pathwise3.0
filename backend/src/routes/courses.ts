@@ -7,7 +7,7 @@ import {
   matchesImageSignature,
   matchesSignature,
 } from "../lib/fileSignature.js";
-import { processUpload } from "../lib/knowledge.js";
+import { runUploadInBackground } from "../lib/knowledge.js";
 import { entitlementsFor } from "../lib/billing.js";
 import {
   topicsWithMastery,
@@ -15,7 +15,6 @@ import {
   isDue,
 } from "../lib/mastery.js";
 import { track } from "../lib/analytics.js";
-import { AIBudgetExceededError } from "../lib/aiMeter.js";
 import { isGuestUser } from "../lib/guests.js";
 import { guestFileTooLarge, guestMayUpload } from "../lib/guestPolicy.js";
 import { env } from "../lib/env.js";
@@ -284,37 +283,47 @@ export default async function courseRoutes(app: FastifyInstance) {
         sizeBytes: saved.sizeBytes,
       });
 
-      let result;
-      try {
-        result = await processUpload(upload.id, req.user.sub);
-      } catch (err) {
-        if (err instanceof AIBudgetExceededError) {
-          // Don't leave the row stuck in "parsing" — the student can retry
-          // tomorrow, and the card should say why it stopped.
-          await prisma.upload.update({
-            where: { id: upload.id },
-            data: { status: "failed", error: err.message },
-          }).catch(() => {});
-          return reply.code(429).send({ error: err.message });
-        }
-        throw err;
-      }
+      // Phase 1.1 (UX overhaul): processing runs in the BACKGROUND. The
+      // response comes back immediately; the frontend polls the status
+      // endpoint below and shows staged progress
+      // (parsing → mapping → processed | failed | rejected).
+      void runUploadInBackground(upload.id, req.user.sub, req.log);
 
-      // A rejected file is a client problem (wrong kind of document), so it
-      // gets a 4xx — the frontend shows the reason rather than a generic error.
-      const status = result.status === "rejected" ? 422 : 201;
-
-      return reply.code(status).send({
+      return reply.code(202).send({
         upload: {
           id: upload.id,
           filename: upload.filename,
           sizeBytes: upload.sizeBytes,
-          status: result.status,
-          error: result.error ?? null,
+          status: "pending",
+          error: null,
         },
-        topicCount: result.topicCount,
-        newTopicCount: result.newTopicCount ?? 0,
       });
+    }
+  );
+
+  // Cheap status poll for one upload — drives the progress UI without
+  // refetching the whole course on every tick.
+  app.get(
+    "/api/courses/:id/uploads/:uploadId",
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const { id, uploadId } = req.params as { id: string; uploadId: string };
+      const upload = await prisma.upload.findFirst({
+        where: { id: uploadId, courseId: id, course: { userId: req.user.sub } },
+        select: { id: true, filename: true, status: true, error: true },
+      });
+      if (!upload) return reply.code(404).send({ error: "Upload not found" });
+
+      // Topic count only once the work is done — while processing it would
+      // just be a confusing moving number.
+      const topicCount =
+        upload.status === "processed"
+          ? await prisma.topic.count({
+              where: { knowledgeMap: { courseId: id } },
+            })
+          : 0;
+
+      return reply.send({ upload, topicCount });
     }
   );
 

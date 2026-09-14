@@ -78,6 +78,10 @@ model User {
   isGuest        Boolean   @default(false)
   guestExpiresAt DateTime?
 
+  // Reserved internal identities (the @pathwise chat assistant). Excluded
+  // from search, matching and every social surface.
+  isSystem       Boolean   @default(false)
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -186,8 +190,10 @@ model Upload {
   mimeType      String
   sizeBytes     Int
 
-  // "pending" | "parsing" | "processed" | "failed" | "rejected"
-  // "rejected" = failed the content check in Step 15 (off-topic/inappropriate).
+  // "pending" | "parsing" | "mapping" | "processed" | "failed" | "rejected"
+  // Processing is a BACKGROUND job (UX overhaul Phase 1.1): parsing =
+  // extracting text, mapping = building the knowledge map. "rejected" =
+  // failed the content check in Step 15 (off-topic/inappropriate).
   status        String    @default("pending")
   extractedText String?   // raw text pulled out of the file (Step 2)
   error         String?
@@ -772,6 +778,9 @@ model DirectMessage {
   senderId       String
   sender         User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
   body           String
+  // Swipe-to-reply (messaging overhaul Phase 2): the message this one quotes.
+  // Plain id, no FK — a deleted original leaves the quote text standing.
+  replyToId      String?
   createdAt      DateTime @default(now())
 
   @@index([conversationId, createdAt])

@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api, ApiError } from "../lib/api";
 import { useApi } from "../lib/useApi";
+import { Avatar } from "../components/Avatar";
 import {
   ErrorState,
   InlineError,
@@ -15,6 +16,8 @@ interface ReplyRow {
   id: string;
   body: string;
   author: string;
+  authorAvatarUrl: string | null;
+  authorAvatarFrame: string;
   mine: boolean;
   helpful: number;
   reactedByMe: boolean;
@@ -28,6 +31,8 @@ interface PostResponse {
     title: string;
     body: string;
     author: string;
+    authorAvatarUrl: string | null;
+    authorAvatarFrame: string;
     mine: boolean;
     helpful: number;
     reactedByMe: boolean;
@@ -231,7 +236,8 @@ export default function PostView() {
 
       <div className="card" style={{ padding: 20, marginTop: 10 }}>
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>{post.title}</h1>
-        <div style={{ fontSize: 12, color: "var(--ink-soft)", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--ink-soft)", marginBottom: 12 }}>
+          <Avatar name={post.author} url={post.authorAvatarUrl} frame={post.authorAvatarFrame} size={22} />
           {post.author} · {new Date(post.createdAt).toLocaleString()}
         </div>
         <p style={{ fontSize: 14, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{post.body}</p>
@@ -267,7 +273,8 @@ export default function PostView() {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {post.replies.map((r) => (
           <div key={r.id} className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--ink-soft)", marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--ink-soft)", marginBottom: 6 }}>
+              <Avatar name={r.author} url={r.authorAvatarUrl} frame={r.authorAvatarFrame} size={20} />
               {r.author} · {new Date(r.createdAt).toLocaleString()}
             </div>
             <p style={{ fontSize: 13.5, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{r.body}</p>

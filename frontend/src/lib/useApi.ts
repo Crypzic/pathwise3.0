@@ -1,7 +1,7 @@
 // Data-fetching hook. Every screen that reads from the backend uses this, so
 // loading, error and empty states are consistent rather than reinvented per
 // page (Step 16 item 1).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 
 export interface AsyncState<T> {
@@ -11,6 +11,10 @@ export interface AsyncState<T> {
   /** Status code, so callers can special-case 402/404. */
   status: number | null;
   reload: () => void;
+  /** Silent refetch: updates data WITHOUT flipping `loading` — for polling
+   *  (chat threads, badges) where a skeleton flash every tick would be worse
+   *  than slightly stale data. */
+  refresh: () => Promise<void>;
   /** Replace the data locally after a mutation, avoiding a refetch. */
   setData: (next: T) => void;
 }
@@ -23,6 +27,22 @@ export function useApi<T>(path: string | null, deps: unknown[] = []): AsyncState
   const [nonce, setNonce] = useState(0);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
+
+  // The latest path, so a long-lived refresh callback never re-fetches a
+  // stale URL after navigation.
+  const pathRef = useRef(path);
+  pathRef.current = path;
+
+  const refresh = useCallback(async () => {
+    const p = pathRef.current;
+    if (!p) return;
+    try {
+      const res = await api.get<T>(p);
+      if (pathRef.current === p) setData(res);
+    } catch {
+      // A failed silent poll keeps the last good data on screen.
+    }
+  }, []);
 
   useEffect(() => {
     if (!path) {
@@ -61,5 +81,5 @@ export function useApi<T>(path: string | null, deps: unknown[] = []): AsyncState
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, nonce, ...deps]);
 
-  return { data, loading, error, status, reload, setData };
+  return { data, loading, error, status, reload, refresh, setData };
 }

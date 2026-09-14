@@ -56,6 +56,21 @@ function fakePng(size = 4096) {
   return buf;
 }
 
+// Uploads return 202 immediately (background processing, UX overhaul 1.1) —
+// poll the status endpoint until the pipeline lands somewhere terminal.
+async function waitUpload(courseId, uploadId, token, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await req("GET", `/api/courses/${courseId}/uploads/${uploadId}`, { token });
+    const s = res.data?.upload?.status;
+    if (s === "processed" || s === "failed" || s === "rejected") {
+      return { status: s, error: res.data?.upload?.error ?? null, topicCount: res.data?.topicCount ?? 0 };
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return { status: "timeout", error: "poll timeout", topicCount: 0 };
+}
+
 console.log(`Knowledge Layer smoke against ${BASE}`);
 
 const email = `kl-smoke-${Date.now()}@test.local`;
@@ -80,7 +95,9 @@ const up = await uploadFile(
   "image/png",
   fakePng()
 );
-check("upload processed (201)", up.status === 201, `got ${up.status}`);
+check("upload accepted immediately (202)", up.status === 202, `got ${up.status}`);
+const done = await waitUpload(courseId, up.data?.upload?.id, tok);
+check("background processing completed", done.status === "processed", JSON.stringify(done));
 
 const detail = await req("GET", `/api/courses/${courseId}`, { token: tok });
 const topics = detail.data?.course?.topics ?? [];
@@ -119,7 +136,9 @@ const up2 = await uploadFile(
   "image/png",
   fakePng(6000)
 );
-check("second upload processed (201)", up2.status === 201, `got ${up2.status}`);
+check("second upload accepted (202)", up2.status === 202, `got ${up2.status}`);
+const done2 = await waitUpload(courseId, up2.data?.upload?.id, tok);
+check("second background processing completed", done2.status === "processed", JSON.stringify(done2));
 const detail2 = await req("GET", `/api/courses/${courseId}`, { token: tok });
 const topics2 = detail2.data?.course?.topics ?? [];
 const after = topics2.find((t) => t.id === before?.id);

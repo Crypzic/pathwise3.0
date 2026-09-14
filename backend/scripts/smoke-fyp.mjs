@@ -71,7 +71,20 @@ const up = await fetch(`${BASE}/api/courses/${courseId}/uploads`, {
   headers: { authorization: `Bearer ${tok}` },
   body: form,
 });
-check("upload processed (201)", up.status === 201, `got ${up.status}`);
+check("upload accepted (202)", up.status === 202, `got ${up.status}`);
+// Background processing (UX overhaul 1.1): poll until the map is built.
+{
+  const upId = (await up.json())?.upload?.id;
+  const deadline = Date.now() + 60000;
+  let s = "pending";
+  while (Date.now() < deadline) {
+    const r = await req("GET", `/api/courses/${courseId}/uploads/${upId}`, { token: tok });
+    s = r.data?.upload?.status;
+    if (s === "processed" || s === "failed" || s === "rejected") break;
+    await new Promise((r2) => setTimeout(r2, 400));
+  }
+  check("background processing completed", s === "processed", `status ${s}`);
+}
 
 // Find the course's topics, then plant a catalog video that names one —
 // the quiz bridge must connect feed → that exact topic.

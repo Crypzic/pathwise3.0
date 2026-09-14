@@ -15,11 +15,14 @@ import {
   AlertIcon,
 } from "../components/icons";
 import { Collapsible } from "../components/Collapsible";
+import { StaggerContainer, StaggerItem } from "../components/motion";
+import { stageLabel, waitForUpload } from "../lib/uploads";
 import {
   EmptyState,
   ErrorState,
   InlineError,
   SkeletonRows,
+  Spinner,
 } from "../components/states";
 
 interface Topic {
@@ -118,7 +121,11 @@ export default function CourseView() {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Which start action is in flight — every launch button shows a spinner
+  // the moment it's tapped (UX overhaul 1.2).
+  const [starting, setStarting] = useState<string | null>(null);
 
   const { data, loading, error, reload } = useApi<CourseResponse>(
     id ? `/api/courses/${id}` : null
@@ -127,22 +134,51 @@ export default function CourseView() {
   async function addMaterial(file: File | undefined) {
     if (!file || !id) return;
     setUploading(true);
+    setUploadStage("pending");
     setUploadError(null);
     try {
-      await api.upload(`/api/courses/${id}/uploads`, file);
+      // Upload returns immediately (202); processing happens server-side in
+      // the background and we poll for staged progress.
+      const res = await api.upload<{ upload: { id: string } }>(
+        `/api/courses/${id}/uploads`,
+        file
+      );
       reload();
+      const done = await waitForUpload(id, res.upload.id, setUploadStage);
+      if (done.status !== "processed") {
+        setUploadError(done.error ?? "Processing failed — try again.");
+      }
     } catch (err) {
       setUploadError(
         err instanceof ApiError ? err.message : "Couldn't add that file."
       );
     } finally {
       setUploading(false);
+      setUploadStage(null);
+      reload();
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
-  async function startQuiz(topicId?: string) {
+  async function removeUpload(u: Upload) {
     if (!id) return;
+    if (!window.confirm(`Remove ${u.filename}? Topics it contributed stay on your map.`)) {
+      return;
+    }
+    setUploadError(null);
+    try {
+      await api.del(`/api/courses/${id}/uploads/${u.id}`);
+      reload();
+    } catch (err) {
+      setUploadError(
+        err instanceof ApiError ? err.message : "Couldn't remove that file."
+      );
+    }
+  }
+
+  async function startQuiz(topicId?: string) {
+    if (!id || starting) return;
+    setStarting(topicId ? `quiz-${topicId}` : "quiz");
     try {
       const res = await api.post<{ sessionId: string }>("/api/quiz/sessions", {
         courseId: id,
@@ -154,11 +190,13 @@ export default function CourseView() {
       setUploadError(
         err instanceof ApiError ? err.message : "Couldn't start a quiz."
       );
+      setStarting(null);
     }
   }
 
   async function startSocratic(topicId?: string) {
-    if (!id) return;
+    if (!id || starting) return;
+    setStarting("socratic");
     try {
       const res = await api.post<{ session: { id: string } }>(
         "/api/socratic/sessions",
@@ -169,6 +207,7 @@ export default function CourseView() {
       setUploadError(
         err instanceof ApiError ? err.message : "Couldn't start Socratic mode."
       );
+      setStarting(null);
     }
   }
 
@@ -205,6 +244,12 @@ export default function CourseView() {
       </p>
 
       <InlineError message={uploadError} />
+      {uploading && uploadStage && (
+        <div className="form-notice" role="status" aria-live="polite">
+          {stageLabel(uploadStage)} — you can keep using Pathwise, this runs in
+          the background.
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <button
@@ -216,16 +261,18 @@ export default function CourseView() {
         <button
           className="btn btn-ghost"
           onClick={() => startQuiz()}
-          disabled={course.topics.length === 0}
+          disabled={course.topics.length === 0 || starting !== null}
         >
-          <PuzzleIcon cls="icon-sm" /> Quiz
+          {starting === "quiz" ? <Spinner /> : <PuzzleIcon cls="icon-sm" />}
+          {starting === "quiz" ? "Starting…" : "Quiz"}
         </button>
         <button
           className="btn btn-ghost"
           onClick={() => startSocratic()}
-          disabled={course.topics.length === 0}
+          disabled={course.topics.length === 0 || starting !== null}
         >
-          <SparklesIcon cls="icon-sm" /> Socratic mode
+          {starting === "socratic" ? <Spinner /> : <SparklesIcon cls="icon-sm" />}
+          {starting === "socratic" ? "Starting…" : "Socratic mode"}
         </button>
         <button
           className="btn btn-ghost"
@@ -269,8 +316,17 @@ export default function CourseView() {
                   <AlertIcon cls="icon-sm" /> Failed
                 </span>
               ) : (
-                <span className="pill pill-muted">{u.status}</span>
+                <span className="pill pill-muted">{stageLabel(u.status)}</span>
               )}
+              <button
+                className="icon-btn"
+                aria-label={`Remove ${u.filename}`}
+                title="Remove this file"
+                onClick={() => removeUpload(u)}
+                style={{ width: 32, height: 32 }}
+              >
+                ✕
+              </button>
             </div>
           ))}
 
@@ -280,7 +336,7 @@ export default function CourseView() {
             disabled={uploading}
           >
             <UploadIcon cls="icon-sm" />
-            {uploading ? "Processing…" : "Add more materials"}
+            {uploading ? stageLabel(uploadStage ?? "pending") : "Add more materials"}
           </button>
           <input
             ref={inputRef}
@@ -312,9 +368,9 @@ export default function CourseView() {
           }
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <StaggerContainer style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {course.topics.map((t) => (
-            <div key={t.id} className="topic-row" style={{ flexWrap: "wrap" }}>
+            <StaggerItem key={t.id} className="topic-row" style={{ flexWrap: "wrap" }}>
               <span
                 className="heat-dot"
                 style={{ background: masteryDotColor(t) }}
@@ -360,11 +416,12 @@ export default function CourseView() {
                   {t.attempted ? `${t.mastery}%` : emphasisLabel(t.weight)}
                 </span>
                 <button
-                  className="btn btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px" }}
+                  className="btn btn-ghost btn-sm"
                   onClick={() => startQuiz(t.id)}
+                  disabled={starting !== null}
                 >
-                  Quiz
+                  {starting === `quiz-${t.id}` ? <Spinner size={13} /> : null}
+                  {starting === `quiz-${t.id}` ? "Starting…" : "Quiz"}
                 </button>
               </div>
               {hasConceptDetail(t) && (
@@ -374,9 +431,9 @@ export default function CourseView() {
                   </Collapsible>
                 </div>
               )}
-            </div>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerContainer>
       )}
     </AppShell>
   );

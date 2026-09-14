@@ -22,7 +22,7 @@ import {
 } from "../lib/socraticGuard.js";
 import { recordSocraticDepth } from "../lib/mastery.js";
 import { isGuestUser } from "../lib/guests.js";
-import { getConceptContext } from "../lib/knowledgeLayer.js";
+import { getConceptContext, getMaterialExcerpt } from "../lib/knowledgeLayer.js";
 import { stuckLevel } from "../lib/socraticAdaptModel.js";
 import {
   awardXp,
@@ -261,11 +261,23 @@ export default async function socraticRoutes(app: FastifyInstance) {
         { role: "user" as const, content },
       ];
 
-      // Socratic 3.0: ground the tutor in the Knowledge Layer concept (with
-      // the student's mastery) and escalate scaffolding when they're stuck.
-      const grounding = session.topicId
-        ? await getConceptContext(req.user.sub, session.topicId)
-        : null;
+      // Socratic 3.0 + Phase 4: ground the tutor in the Knowledge Layer
+      // concept (objectives, misconceptions, the student's mastery) AND an
+      // excerpt of their actual uploaded material, so the first probing
+      // question is about THEIR document, not the subject in general.
+      const [concept, excerpt] = session.topicId
+        ? await Promise.all([
+            getConceptContext(req.user.sub, session.topicId),
+            getMaterialExcerpt(req.user.sub, session.topicId),
+          ])
+        : [null, null];
+      const grounding =
+        [
+          concept,
+          excerpt ? `FROM THE STUDENT'S OWN UPLOADED MATERIAL:\n${excerpt}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n\n") || null;
       const ctx: SocraticContext = {
         grounding,
         escalation: stuckLevel(history),

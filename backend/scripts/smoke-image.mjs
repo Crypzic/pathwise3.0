@@ -58,6 +58,20 @@ function fakePng(size = 4096) {
   return buf;
 }
 
+// Uploads return 202 immediately (background processing) — poll to the end.
+async function waitUpload(courseId, uploadId, token, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await req("GET", `/api/courses/${courseId}/uploads/${uploadId}`, { token });
+    const s = res.data?.upload?.status;
+    if (s === "processed" || s === "failed" || s === "rejected") {
+      return { status: s, error: res.data?.upload?.error ?? null, topicCount: res.data?.topicCount ?? 0 };
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return { status: "timeout", error: "poll timeout", topicCount: 0 };
+}
+
 console.log(`Image upload smoke against ${BASE}`);
 
 const email = `img-smoke-${Date.now()}@test.local`;
@@ -103,12 +117,13 @@ const good = await uploadFile(
   "image/png",
   fakePng()
 );
-check("image upload processed (201)", good.status === 201, `got ${good.status}: ${JSON.stringify(good.data)}`);
-check("upload status is processed", good.data?.upload?.status === "processed");
+check("image upload accepted (202)", good.status === 202, `got ${good.status}: ${JSON.stringify(good.data)}`);
+const goodDone = await waitUpload(courseId, good.data?.upload?.id, tok);
+check("upload status is processed", goodDone.status === "processed", JSON.stringify(goodDone));
 check(
   "image produced topics",
-  (good.data?.topicCount ?? 0) > 0,
-  `topicCount=${good.data?.topicCount}`
+  goodDone.topicCount > 0,
+  `topicCount=${goodDone.topicCount}`
 );
 
 // The knowledge map must show them like any document-derived topics.

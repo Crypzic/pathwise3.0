@@ -87,7 +87,19 @@ const up = await uploadFile(
   "image/png",
   fakePng()
 );
-check("upload processed (201)", up.status === 201, `got ${up.status}`);
+check("upload accepted (202)", up.status === 202, `got ${up.status}`);
+// Background processing (UX overhaul 1.1): poll until the map is built.
+{
+  const deadline = Date.now() + 60000;
+  let s = "pending";
+  while (Date.now() < deadline) {
+    const r = await req("GET", `/api/courses/${courseId}/uploads/${up.data?.upload?.id}`, { token: tok });
+    s = r.data?.upload?.status;
+    if (s === "processed" || s === "failed" || s === "rejected") break;
+    await new Promise((r2) => setTimeout(r2, 400));
+  }
+  check("background processing completed", s === "processed", `status ${s}`);
+}
 
 const detail = await req("GET", `/api/courses/${courseId}`, { token: tok });
 const topics = detail.data?.course?.topics ?? [];

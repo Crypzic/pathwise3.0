@@ -159,6 +159,13 @@ export async function processUpload(
     return { status: "rejected", error: verdict.reason, topicCount: 0 };
   }
 
+  // Visible pipeline stage: the map is being built from here on. The
+  // frontend renders this as "Building knowledge map…".
+  await prisma.upload.update({
+    where: { id: uploadId },
+    data: { status: "mapping" },
+  });
+
   // Ensure a knowledge map exists for the course.
   let mapId = upload.course.knowledgeMap?.id;
   if (!mapId) {
@@ -268,4 +275,34 @@ export async function processUpload(
   await grantBadge(userId, "first_upload");
 
   return { status: "processed", topicCount, newTopicCount };
+}
+
+/**
+ * Fire-and-forget wrapper for the pipeline (Phase 1.1 of the UX overhaul):
+ * the upload route replies immediately and THIS owns every failure mode —
+ * a background task has nobody left to throw to, so anything that escapes
+ * processUpload is written onto the row for the frontend's poll to find.
+ */
+export async function runUploadInBackground(
+  uploadId: string,
+  userId: string,
+  log?: { error: (obj: unknown, msg: string) => void }
+): Promise<void> {
+  try {
+    await processUpload(uploadId, userId);
+  } catch (err) {
+    const message =
+      err instanceof AIBudgetExceededError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : "Processing failed — try the upload again.";
+    await prisma.upload
+      .update({
+        where: { id: uploadId },
+        data: { status: "failed", error: message },
+      })
+      .catch(() => {});
+    log?.error({ err, uploadId }, "background upload processing failed");
+  }
 }

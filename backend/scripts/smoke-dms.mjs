@@ -79,12 +79,91 @@ const reply = await req("POST", `/api/dms/${convAB}/messages`, {
 });
 check("B replies (201)", reply.status === 201);
 
+// --- Messaging overhaul Phase 2: quote-replies, @pathwise, search, badges ---
+const firstMsgId = reply.data?.message?.id;
+const quoted = await req("POST", `/api/dms/${convAB}/messages`, {
+  token: A.token,
+  body: { body: "Accepting those terms.", replyToId: firstMsgId },
+});
+check("quote-reply accepted (201)", quoted.status === 201, `got ${quoted.status}`);
+const threadAfterQuote = await req("GET", `/api/dms/${convAB}`, { token: A.token });
+const quotedRow = (threadAfterQuote.data?.conversation?.messages ?? []).find(
+  (m) => m.replyTo?.id === firstMsgId
+);
+check(
+  "thread shows the quoted snippet",
+  Boolean(quotedRow) && /Loser explains/.test(quotedRow?.replyTo?.body ?? ""),
+  JSON.stringify(quotedRow ?? {}).slice(0, 160)
+);
+check(
+  "thread carries partner avatar fields",
+  "withAvatarUrl" in (threadAfterQuote.data?.conversation ?? {}) &&
+    typeof threadAfterQuote.data?.conversation?.withAvatarFrame === "string"
+);
+
+// @pathwise summons the AI; the reply lands as a bot message shortly after.
+const summon = await req("POST", `/api/dms/${convAB}/messages`, {
+  token: A.token,
+  body: { body: "@pathwise can you explain limiting reagents quickly?" },
+});
+check("@pathwise message sends (201)", summon.status === 201);
+{
+  const deadline = Date.now() + 20000;
+  let aiMsg = null;
+  while (Date.now() < deadline && !aiMsg) {
+    const t = await req("GET", `/api/dms/${convAB}`, { token: A.token });
+    aiMsg = (t.data?.conversation?.messages ?? []).find((m) => m.fromAi);
+    if (!aiMsg) await new Promise((r) => setTimeout(r, 500));
+  }
+  check("@pathwise replies in the thread", Boolean(aiMsg), "no AI message within 20s");
+  check("AI reply is not empty", (aiMsg?.body?.length ?? 0) > 0);
+}
+
+// Username search finds B for A, never guests/self.
+await req("PATCH", "/api/profile", {
+  token: B.token,
+  body: { name: "DM B", email: `dm-b-${stamp}@test.local`, username: `dmsmokeb${stamp}` },
+});
+const found = await req("GET", `/api/users/search?q=dmsmokeb${stamp}`, { token: A.token });
+check(
+  "user search finds by username",
+  (found.data?.users ?? []).some((u) => u.userId === B.id),
+  JSON.stringify(found.data).slice(0, 160)
+);
+const selfSearch = await req("GET", `/api/users/search?q=dmsmokeb${stamp}`, { token: B.token });
+check("search never returns yourself", !(selfSearch.data?.users ?? []).some((u) => u.userId === B.id));
+
+// Badges: B has unread messages from A.
+const badgesB = await req("GET", "/api/badges", { token: B.token });
+check(
+  "badges report unread messages",
+  badgesB.status === 200 && (badgesB.data?.messages ?? 0) > 0,
+  JSON.stringify(badgesB.data)
+);
+await req("GET", `/api/dms/${convAB}`, { token: B.token }); // reading clears
+const badgesB2 = await req("GET", "/api/badges", { token: B.token });
+check("reading the thread clears the badge", (badgesB2.data?.messages ?? 99) === 0, JSON.stringify(badgesB2.data));
+
+// (A already read the thread while polling for the AI reply above, so
+// unread mechanics for A are covered by the badge checks — here we assert
+// the list row itself and avatar fields.)
 const listA = await req("GET", "/api/dms", { token: A.token });
 const rowAB = (listA.data?.conversations ?? []).find((c) => c.id === convAB);
-check("A's list shows the conversation with unread", Boolean(rowAB) && rowAB.unread === 1, JSON.stringify(rowAB));
+check(
+  "A's list shows the conversation with avatar fields",
+  Boolean(rowAB) && "withAvatarUrl" in (rowAB ?? {}) && typeof rowAB?.lastMessage === "string",
+  JSON.stringify(rowAB)
+);
 
 const threadA = await req("GET", `/api/dms/${convAB}`, { token: A.token });
-check("thread shows both messages", (threadA.data?.conversation?.messages ?? []).length === 2);
+const allBodies = (threadA.data?.conversation?.messages ?? []).map((m) => m.body).join(" | ");
+check(
+  "thread holds the whole exchange (originals + quote + AI)",
+  (threadA.data?.conversation?.messages ?? []).length >= 5 &&
+    /Quiz swap tonight/.test(allBodies) &&
+    /Loser explains/.test(allBodies),
+  `${(threadA.data?.conversation?.messages ?? []).length} messages`
+);
 
 const listA2 = await req("GET", "/api/dms", { token: A.token });
 const rowAB2 = (listA2.data?.conversations ?? []).find((c) => c.id === convAB);

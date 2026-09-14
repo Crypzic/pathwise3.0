@@ -16,6 +16,7 @@ import { screenText } from "../lib/communityModel.js";
 import { socraticReply } from "../lib/aiMeter.js";
 import { detectAnswerLeak, fallbackProbe } from "../lib/socraticGuard.js";
 import { AIBudgetExceededError } from "../lib/aiMeter.js";
+import { mentionsPathwise, respondInRoom } from "../lib/pathwiseBot.js";
 import { track } from "../lib/analytics.js";
 import type { ChatMessage } from "../ai/types.js";
 
@@ -163,6 +164,13 @@ export default async function roomRoutes(app: FastifyInstance) {
       const message = await prisma.studyRoomMessage.create({
         data: { roomId: id, senderId: me, content: parsed.data.content.trim() },
       });
+      // "@pathwise …" summons the assistant (Phase 2.4). Background — the
+      // send stays instant and polling picks the reply up.
+      if (mentionsPathwise(parsed.data.content)) {
+        void respondInRoom(id, me, room.topicName).catch((err) =>
+          req.log.error({ err, roomId: id }, "@pathwise room reply failed")
+        );
+      }
       return reply.code(201).send({ message: shapedMessage(message, me) });
     }
   );

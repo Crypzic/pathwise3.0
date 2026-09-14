@@ -25,6 +25,7 @@ import roomRoutes from "./routes/rooms.js";
 import errorRoutes from "./routes/errors.js";
 import topicRoutes from "./routes/topics.js";
 import opsRoutes from "./routes/ops.js";
+import chatRoutes from "./routes/chat.js";
 import { ai, routingSummary } from "./ai/index.js";
 import { email } from "./email/index.js";
 import { billing } from "./lib/billing.js";
@@ -131,6 +132,7 @@ await app.register(roomRoutes);
 await app.register(errorRoutes);
 await app.register(topicRoutes);
 await app.register(opsRoutes);
+await app.register(chatRoutes);
 
 app.get("/api/health", async () => ({
   status: "ok",

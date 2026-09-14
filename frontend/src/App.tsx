@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { MotionConfig } from "framer-motion";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { FeaturesProvider, useFeatures, type Features } from "./lib/features";
 import { ThemeProvider } from "./lib/theme";
@@ -27,6 +28,7 @@ import PostView from "./pages/PostView";
 import Buddies from "./pages/Buddies";
 import Messages from "./pages/Messages";
 import Notifications from "./pages/Notifications";
+import PathwiseChat from "./pages/PathwiseChat";
 import Videos from "./pages/Videos";
 import VideoWatch from "./pages/VideoWatch";
 import CreatorStudio from "./pages/CreatorStudio";
@@ -131,6 +133,7 @@ function AppRoutes() {
       <Route path="/messages/:conversationId" element={<Protected><Messages /></Protected>} />
 
       <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
+      <Route path="/chat" element={<Protected><PathwiseChat /></Protected>} />
       {/* Curated educational videos (PATHWISE 2.0 Phase 14). */}
       <Route path="/videos" element={<Protected><Videos /></Protected>} />
       <Route path="/videos/:id" element={<Protected><VideoWatch /></Protected>} />
@@ -153,16 +156,20 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <FeaturesProvider>
-        <AuthProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
-          </ToastProvider>
-        </AuthProvider>
-      </FeaturesProvider>
-    </ThemeProvider>
+    // reducedMotion="user" turns off Framer transforms app-wide for people
+    // with a reduced-motion preference; the CSS kill-switch covers the rest.
+    <MotionConfig reducedMotion="user">
+      <ThemeProvider>
+        <FeaturesProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <BrowserRouter>
+                <AppRoutes />
+              </BrowserRouter>
+            </ToastProvider>
+          </AuthProvider>
+        </FeaturesProvider>
+      </ThemeProvider>
+    </MotionConfig>
   );
 }

@@ -8,6 +8,7 @@ import { useFeatures } from "../lib/features";
 import { api } from "../lib/api";
 import { LogoFull } from "./Logo";
 import { Avatar } from "./Avatar";
+import { PageTransition } from "./motion";
 import {
   HomeIcon,
   PuzzleIcon,
@@ -76,14 +77,48 @@ function NotificationBell() {
   );
 }
 
+interface NavBadges {
+  messages: number;
+  buddies: number;
+  communities: number;
+}
+
+function badge(n: number) {
+  if (n <= 0) return null;
+  return <span className="nav-badge">{n > 9 ? "9+" : n}</span>;
+}
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { leafMatch, userVideoPosting } = useFeatures();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  // Unread counts on the drawer nav (messaging overhaul Phase 2.2).
+  const [navBadges, setNavBadges] = useState<NavBadges>({ messages: 0, buddies: 0, communities: 0 });
   // Username wins wherever we show who this is — the name is the fallback.
   const shownName = user?.username || user?.name || "?";
+
+  // Refresh on every navigation (opening Messages clears its badge fast)
+  // plus a slow poll for changes that happen while you sit still.
+  useEffect(() => {
+    if (!user || user.isGuest) return;
+    let active = true;
+    const load = () => {
+      api
+        .get<NavBadges>("/api/badges")
+        .then((b) => {
+          if (active) setNavBadges(b);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user?.id, user?.isGuest, location.pathname]);
 
   // The drawer's study-plan link needs a course. Remembering the last-viewed
   // one keeps the nav item useful instead of pointing at a hardcoded id.
@@ -190,13 +225,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )}
           <NavLink to="/communities" className={navClass}>
-            <UsersIcon /> Communities
+            <UsersIcon /> Communities {badge(navBadges.communities)}
           </NavLink>
           <NavLink to="/buddies" className={navClass}>
-            <UsersIcon /> Study buddies
+            <UsersIcon /> Study buddies {badge(navBadges.buddies)}
           </NavLink>
           <NavLink to="/messages" className={navClass}>
-            <MailIcon cls="icon" /> Messages
+            <MailIcon cls="icon" /> Messages {badge(navBadges.messages)}
           </NavLink>
           <NavLink to="/videos" className={navClass}>
             <SparklesIcon cls="icon" /> Videos
@@ -225,11 +260,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main
-        id="main-content"
-        className="main"
-        style={{ maxWidth: 1100, margin: "0 auto" }}
-      >
+      <main id="main-content" className="main">
         {user?.isGuest && (
           <div
             className="form-notice"
@@ -253,9 +284,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           </div>
         )}
-        <div key={location.pathname} className="page-fade-in">
+        <PageTransition key={location.pathname} className="page-fade-in">
           {children}
-        </div>
+        </PageTransition>
       </main>
     </>
   );

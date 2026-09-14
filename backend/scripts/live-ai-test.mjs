@@ -121,9 +121,31 @@ const up = await fetch(`${BASE}/api/courses/${courseId}/uploads`, {
 });
 const upBody = await up.json().catch(() => ({}));
 console.log(`Upload: HTTP ${up.status} in ${((Date.now() - upStart) / 1000).toFixed(1)}s`);
-if (up.status !== 201) {
+if (up.status !== 202) {
   console.error("Upload failed:", JSON.stringify(upBody).slice(0, 300));
   process.exit(1);
+}
+
+// Background processing (UX overhaul 1.1): poll with live stage output.
+{
+  const upId = upBody?.upload?.id;
+  const deadline = Date.now() + 5 * 60_000;
+  let s = "pending";
+  let lastShown = "";
+  while (Date.now() < deadline) {
+    const r = await req("GET", `/api/courses/${courseId}/uploads/${upId}`, { token: tok });
+    s = r.data?.upload?.status;
+    if (s !== lastShown) {
+      lastShown = s;
+      console.log(`  stage: ${s} (${((Date.now() - upStart) / 1000).toFixed(1)}s)`);
+    }
+    if (s === "processed" || s === "failed" || s === "rejected") break;
+    await new Promise((r2) => setTimeout(r2, 1500));
+  }
+  if (s !== "processed") {
+    console.error(`Processing ended as "${s}"`);
+    process.exit(1);
+  }
 }
 
 const detail = await req("GET", `/api/courses/${courseId}`, { token: tok });
